@@ -1,0 +1,63 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Listing {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  category      String   @default("service")
+  askingPrice   Float
+  // private to seller — never shown to the buyer agent
+  floorPrice    Float
+  earliestDays  Int      @default(3)
+  sellerNotes   String   @default("")
+  sellerName    String   @default("Seller")
+  createdAt     DateTime @default(now())
+  negotiations  Negotiation[]
+}
+
+model Negotiation {
+  id                 String   @id @default(cuid())
+  listingId          String
+  listing            Listing  @relation(fields: [listingId], references: [id])
+  buyerName          String   @default("Buyer")
+  // private to buyer — never shown to the seller agent
+  buyerMax           Float
+  buyerDeadlineDays  Int
+  buyerMustHaves     String   @default("")
+  buyerStyle         String   @default("friendly")
+  status             String   @default("pending") // pending|negotiating|agreed|walked|paid
+  agreedPrice        Float?
+  agreedDays         Int?
+  agreedDeliverables String?  // JSON string[]
+  buyerApproved      Boolean  @default(false)
+  sellerApproved     Boolean  @default(false)
+  paypalOrderId      String?
+  paypalCaptureId    String?
+  rounds             Int      @default(0)
+  guardBlocks        Int      @default(0)
+  createdAt          DateTime @default(now())
+  turns              Turn[]
+}
+
+model Turn {
+  id             String   @id @default(cuid())
+  negotiationId  String
+  negotiation    Negotiation @relation(fields: [negotiationId], references: [id])
+  idx            Int
+  role           String   // buyer|seller|system
+  message        String
+  action         String   // counter|accept|walk|blocked|info
+  price          Float?
+  days           Int?
+  deliverables   String?  // JSON string[]
+  createdAt      DateTime @default(now())
+}
