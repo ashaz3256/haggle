@@ -15,7 +15,7 @@ A buyer describes what they want and sets a private max budget and deadline. A s
 ## Stack
 
 - Next.js 15 (App Router) + TypeScript + Tailwind v4
-- Claude (Anthropic SDK) with forced tool-use for structured negotiation moves
+- LLM agents with forced tool-use for structured moves — Claude (Anthropic SDK) or any OpenAI-compatible API (Gemini, Groq, OpenRouter, OpenAI)
 - PayPal Orders API v2 + PayPal JS SDK buttons (`@paypal/react-paypal-js`)
 - Prisma 6 + SQLite (engine-less driver adapter, `better-sqlite3`)
 - AG Grid for the deals dashboard
@@ -36,8 +36,8 @@ npm run dev              # http://localhost:3000
 
 | Variable | Where to get it |
 |---|---|
-| `ANTHROPIC_API_KEY` | console.anthropic.com |
-| `ANTHROPIC_MODEL` | any Claude model id (default `claude-sonnet-5-5`) |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | any OpenAI-compatible API. Gemini free tier: aistudio.google.com → Get API key (defaults in `.env.example`) |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | *or* use Claude instead — if set, this takes priority |
 | `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | developer.paypal.com → Apps & Credentials → **Sandbox** → Create app |
 | `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | same client ID (used by the PayPal buttons) |
 | `PAYPAL_API_BASE` | leave as `https://api-m.sandbox.paypal.com` |

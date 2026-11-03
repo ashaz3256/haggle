@@ -20,6 +20,7 @@
     "ag-grid-react": "^33.3.1",
     "better-sqlite3": "^13.0.3",
     "next": "^15.3.3",
+    "openai": "^7.47.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^3.25.0"

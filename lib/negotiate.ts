@@ -12,11 +12,20 @@
  * the move is blocked, logged, and the agent is told to try again.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { z } from "zod";
 import { db } from "./db";
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS ?? 8);
+
+/**
+ * Provider selection:
+ *  - ANTHROPIC_API_KEY set            → Claude via Anthropic SDK (ANTHROPIC_MODEL)
+ *  - otherwise LLM_API_KEY + LLM_BASE_URL → any OpenAI-compatible API (Gemini, Groq, OpenRouter, OpenAI) with LLM_MODEL
+ */
+const useAnthropic = !!process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
+const LLM_MODEL = process.env.LLM_MODEL ?? "gemini-2.5-flash";
 
 const Move = z.object({
   message: z.string().min(1),
@@ -38,12 +47,12 @@ export interface NegotiationEvent {
   outcome?: { price: number; days: number; deliverables: string[] };
 }
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = useAnthropic ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+const openai = useAnthropic
+  ? null
+  : new OpenAI({ apiKey: process.env.LLM_API_KEY ?? "missing", baseURL: process.env.LLM_BASE_URL });
 
-const moveTool: Anthropic.Tool = {
-  name: "submit_move",
-  description: "Submit your next move in the negotiation.",
-  input_schema: {
+const moveSchema = {
     type: "object",
     properties: {
       message: { type: "string", description: "What you say to the other party. 1-3 sentences, natural, in character." },
@@ -58,7 +67,12 @@ const moveTool: Anthropic.Tool = {
       deliverables: { type: "array", items: { type: "string" }, description: "Concrete list of what is included." },
     },
     required: ["message", "action", "price", "days", "deliverables"],
-  },
+} as const;
+
+const moveTool: Anthropic.Tool = {
+  name: "submit_move",
+  description: "Submit your next move in the negotiation.",
+  input_schema: moveSchema as unknown as Anthropic.Tool["input_schema"],
 };
 
 function buyerSystem(n: NegCtx) {
@@ -165,18 +179,39 @@ async function askAgent(role: Role, ctx: NegCtx, transcript: Transcript[], retry
     (retryNote ? `IMPORTANT — your previous move was rejected by your principal's rules: ${retryNote} Submit a different move that respects your limits.\n\n` : "") +
     `It is your turn (${role}). Round ${Math.floor(transcript.length / 2) + 1} of ${MAX_ROUNDS}. Call submit_move.`;
 
-  const res = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 600,
-    system,
-    tools: [moveTool],
-    tool_choice: { type: "tool", name: "submit_move" },
-    messages: [{ role: "user", content: userPrompt }],
-  });
+  let raw: unknown;
 
-  const block = res.content.find((c) => c.type === "tool_use");
-  if (!block || block.type !== "tool_use") throw new Error("Agent did not call submit_move");
-  const parsed = Move.safeParse(block.input);
+  if (anthropic) {
+    const res = await anthropic.messages.create({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 600,
+      system,
+      tools: [moveTool],
+      tool_choice: { type: "tool", name: "submit_move" },
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    const block = res.content.find((c) => c.type === "tool_use");
+    if (!block || block.type !== "tool_use") throw new Error("Agent did not call submit_move");
+    raw = block.input;
+  } else {
+    if (!process.env.LLM_API_KEY) throw new Error("Set ANTHROPIC_API_KEY, or LLM_API_KEY + LLM_BASE_URL + LLM_MODEL");
+    const res = await openai!.chat.completions.create({
+      model: LLM_MODEL,
+      max_tokens: 600,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userPrompt },
+      ],
+      tools: [{ type: "function", function: { name: "submit_move", description: "Submit your next move in the negotiation.", parameters: moveSchema } }],
+      tool_choice: { type: "function", function: { name: "submit_move" } },
+    });
+    const call = res.choices[0]?.message?.tool_calls?.[0];
+    const args = call && "function" in call ? call.function.arguments : undefined;
+    if (!args) throw new Error("Agent did not call submit_move");
+    raw = JSON.parse(args);
+  }
+
+  const parsed = Move.safeParse(raw);
   if (!parsed.success) throw new Error(`Bad move shape: ${parsed.error.message}`);
   return parsed.data;
 }
