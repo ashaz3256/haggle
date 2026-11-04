@@ -20,6 +20,7 @@ export default async function Home() {
         </p>
         <div className="mt-6 flex gap-3">
           <a href="#listings" className="btn bg-white text-navy hover:bg-mist">Browse listings</a>
+          <Link href="/how-it-works" className="btn border border-white/30 text-white hover:bg-white/10">How it works</Link>
           <Link href="/sell" className="btn border border-white/30 text-white hover:bg-white/10">Post a listing</Link>
         </div>
       </section>

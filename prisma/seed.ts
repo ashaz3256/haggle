@@ -1,6 +1,11 @@
 import { db } from "../lib/db";
 
 async function main() {
+  // Idempotent: the start script runs this on every boot.
+  if ((await db.listing.count()) > 0) {
+    console.log("Listings already present, skipping seed");
+    return;
+  }
   await db.listing.createMany({
     data: [
       {

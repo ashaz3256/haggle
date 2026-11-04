@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Haggle
             </Link>
             <nav className="flex items-center gap-1 text-sm font-medium">
+              <Link href="/how-it-works" className="px-3 py-1.5 rounded-full hover:bg-mist">How it works</Link>
               <Link href="/" className="px-3 py-1.5 rounded-full hover:bg-mist">Listings</Link>
               <Link href="/dashboard" className="px-3 py-1.5 rounded-full hover:bg-mist">Dashboard</Link>
               <Link href="/sell" className="btn-blue !py-1.5 ml-1">Post a listing</Link>

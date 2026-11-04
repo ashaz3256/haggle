@@ -2,8 +2,9 @@
 
 Setup before you start (not on the clock):
 
-- Dev server running at http://localhost:3000 (`npm run dev` from `haggle/haggle/`).
-- Tab 1: http://localhost:3000 (start here).
+- Public instance: https://haggle-production-b343.up.railway.app (Railway, SQLite on a `/data` volume, deployed 2026-11-04 with `railway up` from `haggle/haggle/`). Use this for the demo; localhost is the fallback.
+- Fallback dev server at http://localhost:3000 (`npm run dev` from `haggle/haggle/`).
+- Tab 1: the public URL (start here).
 - Tab 2 (backup): an already-agreed deal, e.g. `http://localhost:3000/deal/<id>` from an earlier run. Both approvals done if you want to show the PayPal button.
 - Have a PayPal sandbox personal account ready if you plan to pay live.
 
@@ -14,7 +15,7 @@ Typical result: agreed around the mid-£200s in about 3 rounds. Last verified ru
 
 | Time | Where / click | Say |
 |---|---|---|
-| 0:00 | http://localhost:3000 (home, 3 listings) | "Haggle: your agent haggles, their agent haggles back, you both approve, PayPal settles." |
+| 0:00 | Home page (3 listings) | "Haggle: your agent haggles, their agent haggles back, you both approve, PayPal settles." |
 | 0:15 | Click **Send your agent** on "Used road bike, Giant Contend, 2021" (asking £320) | "Tom is selling a bike for £320. I'm Sam, and I'll brief my agent." |
 | 0:25 | Brief form: Name `Sam`, Max budget `260`, Within `7` days, Must-haves `helmet included`. Click **Send my agent in** | "My max is £260. The seller's agent never sees that number. It also never tells mine its floor." |
 | 0:40 | Deal room opens at `/deal/<id>`. Watch the bubbles stream in | "Two LLM agents, live over SSE. Each only knows its own limits and the public listing." |
@@ -23,7 +24,7 @@ Typical result: agreed around the mid-£200s in about 3 rounds. Last verified ru
 | 1:45 | Click **Approve as Sam (buyer)**, then **Approve as Tom (seller)** | "Both humans sign off. The server refuses to create a PayPal order until both have." |
 | 2:10 | PayPal buttons unlock in the same card. Click the PayPal button | "PayPal Orders v2. The order is created server-side only after dual approval." |
 | 2:25 | PayPal sandbox popup: log in with the sandbox personal account and pay (or stop at the popup, see fallback) | "Sandbox money, real PayPal flow. On approval the server captures the order." |
-| 2:40 | Open http://localhost:3000/dashboard | "Every negotiation: asking vs budget vs agreed, rounds, guard blocks, PayPal order." |
+| 2:40 | Open /dashboard | "Every negotiation: asking vs budget vs agreed, rounds, guard blocks, PayPal order." |
 | 2:55 | Back to home | "Agents negotiate. Guards enforce. Humans approve. PayPal settles." |
 
 Timing notes:
@@ -57,6 +58,11 @@ Rules that make this deterministic, not vibes:
 - The guard blocking a move depends on the model misbehaving. It may show 0 blocks on a given run. Do not promise a red Guard row.
 
 ## Fallbacks
+
+### Public instance is down
+
+1. Switch to localhost:3000 (`npm run dev` from `haggle/haggle/`). Same code, same `.env`.
+2. To redeploy: `railway up -c -y` from `haggle/haggle/` (CLI is logged in as the Railway account). Variables and the `/data` volume are already set on the `haggle` service.
 
 ### LLM is down or slow (bubbles stop, error shown, or a Resume button appears)
 
