@@ -18,12 +18,12 @@ human approval on both sides, then PayPal Orders v2 sandbox checkout.
 - `lib/negotiate.ts` — buyer/seller system prompts, forced `submit_move` tool, `guard()` (the trust boundary for model output), `runNegotiation`.
 - `lib/paypal.ts` — `createOrder`, `captureOrder`, `getOrder`.
 - `lib/db.ts` — Prisma client. Schema/seed in `prisma/`.
-- `app/api/negotiations/[id]/stream/route.ts` — SSE stream of moves. Other routes: `app/api/listings`, `app/api/negotiations`, `app/api/negotiations/[id]/approve`, `app/api/paypal/{create-order,capture-order}`, `app/api/dashboard`.
+- `app/api/negotiations/[id]/stream/route.ts` — SSE stream of moves. Other routes: `app/api/listings`, `app/api/negotiations`, `app/api/negotiations/[id]/approve`, `app/api/negotiations/[id]/decide` (human resolves `needs_human`), `app/api/paypal/{create-order,capture-order}`, `app/api/dashboard`.
 - UI: `app/page.tsx` (listings), `app/listing/[id]`, `app/deal/[id]`, `app/sell`, `app/dashboard`. Components: `components/DealRoom.tsx`, `PayPalCheckout.tsx`, `DealsGrid.tsx`, `BriefForm.tsx`.
 
 ## LLM setup
-- Agents call an OpenAI-compatible endpoint (Gemini) via `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` / `LLM_FALLBACK_MODELS` in `.env` (gitignored). Anthropic direct is also supported via `ANTHROPIC_API_KEY`.
-- Do not suggest `gemini-2.5-*` models: this key gets 404 for them (as of 2026-11-03). If a model returns 503 "high demand", swap to another in `LLM_FALLBACK_MODELS`.
+- Agents call an OpenAI-compatible endpoint via `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` / `LLM_FALLBACK_MODELS` in `.env` (gitignored). Currently Nebius (Qwen3-235B primary, ~10-20s per negotiation). NVIDIA NIM nemotron-3.5 models also work; Gemini worked until its quota ran out on 2026-11-03. Anthropic direct is also supported via `ANTHROPIC_API_KEY`.
+- If moves stop arriving, probe the provider directly with curl before touching app code. Do not suggest `gemini-2.5-*` models (404 for this key). All fallback models must be on the same provider as `LLM_BASE_URL`.
 
 ## PayPal
 - Sandbox `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` / `NEXT_PUBLIC_PAYPAL_CLIENT_ID` live in `.env`. Checkout cannot be tested without them plus a sandbox personal account to pay with.

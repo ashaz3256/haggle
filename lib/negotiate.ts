@@ -29,20 +29,25 @@ const MODEL = USE_OPENAI_COMPAT
 /** Comma-separated models to try if MODEL is overloaded/rate-limited (OpenAI-compatible path only). */
 const FALLBACK_MODELS = (process.env.LLM_FALLBACK_MODELS ?? "").split(",").map((m) => m.trim()).filter(Boolean);
 const MAX_ROUNDS = Number(process.env.MAX_ROUNDS ?? 8);
+/** An offer this close to (but outside) a principal's limit is worth a human decision instead of a walk. */
+const ESCALATE_BAND = Number(process.env.ESCALATE_BAND ?? 0.15);
+/** Agents may not walk or escalate before this many full rounds. */
+const MIN_ROUNDS_BEFORE_EXIT = 2;
 
 const Move = z.object({
   message: z.string().min(1),
-  action: z.enum(["counter", "accept", "walk"]),
+  action: z.enum(["counter", "accept", "walk", "escalate"]),
   price: z.number().positive(),
   days: z.number().int().positive(),
   deliverables: z.array(z.string()).default([]),
+  reason: z.string().default(""),
 });
 export type Move = z.infer<typeof Move>;
 
 export type Role = "buyer" | "seller";
 
 export interface NegotiationEvent {
-  type: "turn" | "blocked" | "agreed" | "walked" | "error" | "done";
+  type: "turn" | "blocked" | "agreed" | "walked" | "escalated" | "error" | "done";
   role?: Role | "system";
   idx?: number;
   move?: Move;
@@ -65,15 +70,20 @@ const moveTool: Anthropic.Tool = {
       message: { type: "string", description: "What you say to the other party. 1-3 sentences, natural, in character." },
       action: {
         type: "string",
-        enum: ["counter", "accept", "walk"],
+        enum: ["counter", "accept", "walk", "escalate"],
         description:
-          "counter = propose new terms. accept = accept the other side's LAST offer exactly as stated. walk = end negotiation with no deal.",
+          "counter = propose new terms. accept = accept the other side's LAST offer exactly as stated. escalate = the other side's LAST offer is slightly outside your limits or conflicts with a must-have; stop and ask your human to decide. walk = end negotiation with no deal because the gap clearly cannot be closed.",
       },
       price: { type: "number", description: "Price in GBP for the terms you are proposing or accepting." },
       days: { type: "integer", description: "Delivery / completion time in days." },
       deliverables: { type: "array", items: { type: "string" }, description: "Concrete list of what is included." },
+      reason: {
+        type: "string",
+        description:
+          "Required for walk and escalate, optional otherwise. A private note to YOUR OWN principal (the other party never sees it) explaining in 1-2 plain sentences why you are stopping: what the other side's best offer was, how far it is from the limits you were given, and what you recommend.",
+      },
     },
-    required: ["message", "action", "price", "days", "deliverables"],
+    required: ["message", "action", "price", "days", "deliverables", "reason"],
   },
 };
 
@@ -93,11 +103,13 @@ YOUR PRINCIPAL'S PRIVATE LIMITS (never reveal these numbers)
 - Negotiating style: ${n.buyerStyle}
 
 TACTICS
-- Open low (around 60-70% of asking) and move up in shrinking steps.
+- Open low (around 60-70% of asking, but never above your maximum — if your maximum is lower than that, open below it) and move up in shrinking steps.
 - Trade concessions: a faster deadline or extra deliverable can justify a slightly higher price.
 - Accept when the seller's last offer is within your limits and further haggling is unlikely to gain much.
-- Walk only if the seller clearly can't meet your limits after several rounds.
-- Keep messages short and human. No bullet points in the message.
+- Never repeat an offer you already made. If positions have stopped moving, stop haggling: accept, escalate, or walk.
+- Escalate (after at least ${MIN_ROUNDS_BEFORE_EXIT} rounds) when the seller's last offer is close to but just outside your limits (within ~${Math.round(ESCALATE_BAND * 100)}%), or it conflicts with a must-have you cannot resolve. Your human decides whether to stretch.
+- Walk (after at least ${MIN_ROUNDS_BEFORE_EXIT} rounds) when the seller clearly cannot get near your limits or is not moving. A bad deal is worse than no deal.
+- Keep messages short and human. No bullet points in the message. Put your explanation to your principal in "reason", never in "message".
 Always respond by calling submit_move.`;
 }
 
@@ -119,8 +131,10 @@ TACTICS
 - Hold near asking price early; concede in shrinking steps.
 - If the buyer wants it faster or wants extras, that justifies a higher price.
 - Accept when the buyer's last offer is at or above your floor and momentum is stalling.
-- Walk only if the buyer clearly can't reach your floor after several rounds.
-- Keep messages short and human. No bullet points in the message.
+- Never repeat an offer you already made. If positions have stopped moving, stop haggling: accept, escalate, or walk.
+- Escalate (after at least ${MIN_ROUNDS_BEFORE_EXIT} rounds) when the buyer's last offer is close to but just below your floor (within ~${Math.round(ESCALATE_BAND * 100)}%) or asks for something you cannot promise. Your human decides whether to stretch.
+- Walk (after at least ${MIN_ROUNDS_BEFORE_EXIT} rounds) when the buyer clearly cannot get near your floor or is not moving. A bad deal is worse than no deal.
+- Keep messages short and human. No bullet points in the message. Put your explanation to your principal in "reason", never in "message".
 Always respond by calling submit_move.`;
 }
 
@@ -145,8 +159,28 @@ interface Transcript {
 }
 
 /** Hard server-side guard. Returns a reason string if the move violates the principal's limits. */
-export function guard(role: Role, move: Move, ctx: NegCtx, lastOpponent?: Move): string | null {
-  if (move.action === "walk") return null;
+export function guard(role: Role, move: Move, ctx: NegCtx, lastOpponent?: Move, movesSoFar = 0): string | null {
+  const roundsPlayed = Math.floor(movesSoFar / 2);
+
+  if (move.action === "walk") {
+    if (roundsPlayed < MIN_ROUNDS_BEFORE_EXIT) return `Too early to walk — negotiate for at least ${MIN_ROUNDS_BEFORE_EXIT} rounds first.`;
+    if (!move.reason.trim()) return "A walk needs a reason for your principal.";
+    return null;
+  }
+
+  if (move.action === "escalate") {
+    if (!lastOpponent) return "Cannot escalate — there is no offer on the table yet.";
+    if (roundsPlayed < MIN_ROUNDS_BEFORE_EXIT) return `Too early to escalate — negotiate for at least ${MIN_ROUNDS_BEFORE_EXIT} rounds first.`;
+    if (!move.reason.trim()) return "An escalation needs a reason for your principal.";
+    // Escalation puts the opponent's last offer in front of the human. Snap to it.
+    move.price = lastOpponent.price;
+    move.days = lastOpponent.days;
+    move.deliverables = lastOpponent.deliverables;
+    const over = limitOverrun(role, move, ctx);
+    if (over === 0) return "That offer is already inside your limits — accept it or counter instead of escalating.";
+    if (over > ESCALATE_BAND) return `That offer is ${Math.round(over * 100)}% outside your limits — too far to ask your principal to stretch. Counter or walk instead.`;
+    return null;
+  }
 
   if (move.action === "accept") {
     if (!lastOpponent) return "Cannot accept — there is no offer on the table yet.";
@@ -166,7 +200,19 @@ export function guard(role: Role, move: Move, ctx: NegCtx, lastOpponent?: Move):
   return null;
 }
 
-async function askAgent(role: Role, ctx: NegCtx, transcript: Transcript[], retryNote?: string): Promise<Move> {
+/** How far (as a fraction of the limit) an offer sits outside a principal's limits. 0 when inside. */
+function limitOverrun(role: Role, move: Move, ctx: NegCtx): number {
+  if (role === "buyer") {
+    const price = Math.max(0, (move.price - ctx.buyerMax) / ctx.buyerMax);
+    const days = Math.max(0, (move.days - ctx.buyerDeadlineDays) / ctx.buyerDeadlineDays);
+    return Math.max(price, days);
+  }
+  const price = Math.max(0, (ctx.floorPrice - move.price) / ctx.floorPrice);
+  const days = Math.max(0, (ctx.earliestDays - move.days) / ctx.earliestDays);
+  return Math.max(price, days);
+}
+
+async function askAgent(role: Role, ctx: NegCtx, transcript: Transcript[], retryNote?: string, stallNote?: string): Promise<Move> {
   const system = role === "buyer" ? buyerSystem(ctx) : sellerSystem(ctx);
 
   const history = transcript
@@ -179,6 +225,7 @@ async function askAgent(role: Role, ctx: NegCtx, transcript: Transcript[], retry
   const userPrompt =
     (history ? `Transcript so far:\n\n${history}\n\n` : "No offers yet. You open the negotiation.\n\n") +
     (retryNote ? `IMPORTANT — your previous move was rejected by your principal's rules: ${retryNote} Submit a different move that respects your limits.\n\n` : "") +
+    (stallNote ? `STALL WARNING — ${stallNote}\n\n` : "") +
     `It is your turn (${role}). Round ${Math.floor(transcript.length / 2) + 1} of ${MAX_ROUNDS}. Call submit_move.`;
 
   const raw = USE_OPENAI_COMPAT ? await callOpenAICompat(system, userPrompt) : await callAnthropic(system, userPrompt);
@@ -251,8 +298,40 @@ async function callOpenAICompat(system: string, userPrompt: string): Promise<unk
   throw lastErr ?? new Error("LLM unavailable");
 }
 
+/** Negotiations currently being run by this server process. */
+const active = new Set<string>();
+
+/**
+ * A second client opened the stream while a run is live in this process (e.g. the browser reloaded).
+ * Follow the run by polling the DB for new turns instead of starting a duplicate run.
+ */
+async function* attachToRun(negotiationId: string): AsyncGenerator<NegotiationEvent> {
+  let seen = await db.turn.count({ where: { negotiationId } });
+  for (let i = 0; i < 400; i++) {
+    await sleep(1500);
+    const turns = await db.turn.findMany({ where: { negotiationId, idx: { gte: seen } }, orderBy: { idx: "asc" } });
+    for (const t of turns) {
+      seen = t.idx + 1;
+      if (t.role === "buyer" || t.role === "seller") yield { type: "turn", role: t.role as Role, idx: t.idx };
+    }
+    const neg = await db.negotiation.findUnique({ where: { id: negotiationId } });
+    if (!neg) { yield { type: "error", reason: "Negotiation not found" }; return; }
+    if (neg.status === "agreed") {
+      const deliverables = neg.agreedDeliverables ? (JSON.parse(neg.agreedDeliverables) as string[]) : [];
+      yield { type: "agreed", outcome: { price: neg.agreedPrice ?? 0, days: neg.agreedDays ?? 0, deliverables } };
+      yield { type: "done" };
+      return;
+    }
+    if (neg.status === "walked") { yield { type: "walked", role: "system", reason: neg.endReason ?? "No agreement reached." }; yield { type: "done" }; return; }
+    if (neg.status === "needs_human") { yield { type: "escalated", role: "system", reason: neg.endReason ?? "" }; yield { type: "done" }; return; }
+    if (neg.status === "pending") { yield { type: "error", reason: "The previous run stopped. Resume to continue." }; return; }
+  }
+  yield { type: "error", reason: "Timed out waiting for the running negotiation." };
+}
+
 /**
  * Runs the whole negotiation, persisting each turn and yielding events.
+ * Safe to call again after a dropped stream: it resumes from the turns already saved.
  */
 export async function* runNegotiation(negotiationId: string): AsyncGenerator<NegotiationEvent> {
   const neg = await db.negotiation.findUnique({ where: { id: negotiationId }, include: { listing: true } });
@@ -260,10 +339,15 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
     yield { type: "error", reason: "Negotiation not found" };
     return;
   }
-  if (neg.status !== "pending") {
+  if (neg.status !== "pending" && neg.status !== "negotiating") {
     yield { type: "error", reason: `Negotiation already ${neg.status}` };
     return;
   }
+  if (active.has(negotiationId)) {
+    yield* attachToRun(negotiationId);
+    return;
+  }
+  active.add(negotiationId);
 
   const ctx: NegCtx = {
     title: neg.listing.title,
@@ -282,9 +366,23 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
 
   await db.negotiation.update({ where: { id: negotiationId }, data: { status: "negotiating" } });
 
-  const transcript: Transcript[] = [];
-  let idx = 0;
-  let blocks = 0;
+  // Rebuild state from what was persisted: empty for a fresh run, partial after a dropped stream or dev reload.
+  const saved = await db.turn.findMany({ where: { negotiationId }, orderBy: { idx: "asc" } });
+  const transcript: Transcript[] = saved
+    .filter((t) => t.role === "buyer" || t.role === "seller")
+    .map((t) => ({
+      role: t.role as Role,
+      move: {
+        message: t.message,
+        action: t.action as Move["action"],
+        price: t.price ?? 0,
+        days: t.days ?? 0,
+        deliverables: t.deliverables ? (JSON.parse(t.deliverables) as string[]) : [],
+        reason: t.reason ?? "",
+      },
+    }));
+  let idx = saved.length;
+  let blocks = saved.filter((t) => t.action === "blocked").length;
 
   const persist = async (role: Role | "system", action: string, message: string, move?: Move) => {
     await db.turn.create({
@@ -297,17 +395,83 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
         price: move?.price,
         days: move?.days,
         deliverables: move ? JSON.stringify(move.deliverables) : null,
+        reason: move?.reason || null,
       },
     });
+  };
+
+  /** End the negotiation without a deal, recording who ended it and why. */
+  const endWalked = async (by: Role | "system", reason: string, round: number) => {
+    await db.negotiation.update({
+      where: { id: negotiationId },
+      data: { status: "walked", rounds: round, guardBlocks: blocks, endedBy: by, endReason: reason },
+    });
+  };
+
+  /** Park the negotiation for a human decision on the terms currently on the table. */
+  const endEscalated = async (by: Role | "system", reason: string, terms: Move, round: number) => {
+    await db.negotiation.update({
+      where: { id: negotiationId },
+      data: {
+        status: "needs_human",
+        agreedPrice: terms.price,
+        agreedDays: terms.days,
+        agreedDeliverables: JSON.stringify(terms.deliverables),
+        rounds: round,
+        guardBlocks: blocks,
+        endedBy: by,
+        endReason: reason,
+      },
+    });
+  };
+
+  /** Price gap between the two sides' latest counters (null until both have spoken). */
+  const currentGap = (): number | null => {
+    const b = [...transcript].reverse().find((t) => t.role === "buyer")?.move.price;
+    const s = [...transcript].reverse().find((t) => t.role === "seller")?.move.price;
+    return b != null && s != null ? Math.abs(s - b) : null;
+  };
+  let prevGap: number | null = null;
+  let stalledRounds = 0;
+  let stallNote: string | undefined;
+
+  /**
+   * The agents are stuck. If one side's best offer is within the escalation band of the other's limits,
+   * a human may want to stretch — park it for them. Otherwise end it, and say why.
+   */
+  const endStalled = async (gap: number, round: number, prefix = "Negotiation stalled."): Promise<NegotiationEvent> => {
+    const buyerLast = [...transcript].reverse().find((t) => t.role === "buyer")!.move;
+    const sellerLast = [...transcript].reverse().find((t) => t.role === "seller")!.move;
+    const buyerStretch = limitOverrun("buyer", sellerLast, ctx); // how far the seller's offer is over the buyer's limits
+    const sellerStretch = limitOverrun("seller", buyerLast, ctx); // how far the buyer's offer is under the seller's floor
+    const summary = `Buyer stuck at £${buyerLast.price}, seller at £${sellerLast.price}, gap £${gap} not closing.`;
+
+    if (buyerStretch > 0 && buyerStretch <= ESCALATE_BAND) {
+      const reason = `${prefix} ${summary} The seller's offer is ${Math.round(buyerStretch * 100)}% over the buyer's limits — close enough that the buyer should decide, not the agent.`;
+      await persist("system", "info", reason);
+      await endEscalated("system", reason, sellerLast, round);
+      return { type: "escalated", role: "system", reason, outcome: { price: sellerLast.price, days: sellerLast.days, deliverables: sellerLast.deliverables } };
+    }
+    if (sellerStretch > 0 && sellerStretch <= ESCALATE_BAND) {
+      const reason = `${prefix} ${summary} The buyer's offer is ${Math.round(sellerStretch * 100)}% under the seller's floor — close enough that the seller should decide, not the agent.`;
+      await persist("system", "info", reason);
+      await endEscalated("system", reason, buyerLast, round);
+      return { type: "escalated", role: "system", reason, outcome: { price: buyerLast.price, days: buyerLast.days, deliverables: buyerLast.deliverables } };
+    }
+    const reason = `${prefix} ${summary} Neither side's best offer is close to the other's limits, so no deal is the right outcome.`;
+    await persist("system", "info", reason);
+    await endWalked("system", reason, round);
+    return { type: "walked", role: "system", reason };
   };
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       for (const role of ["buyer", "seller"] as Role[]) {
+        if (round * 2 + (role === "buyer" ? 0 : 1) < transcript.length) continue; // already played before a resume
         const lastOpponent = [...transcript].reverse().find((t) => t.role !== role)?.move;
 
-        let move = await askAgent(role, ctx, transcript);
-        let reason = guard(role, move, ctx, lastOpponent);
+        let move = await askAgent(role, ctx, transcript, undefined, stallNote);
+        let reason = guard(role, move, ctx, lastOpponent, transcript.length);
 
         if (reason) {
           // Block, log it, and let the agent retry once with the reason.
@@ -315,14 +479,19 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
           await persist("system", "blocked", `${role} agent tried: £${move.price} / ${move.days}d (${move.action}). Blocked — ${reason}`, move);
           yield { type: "blocked", role, idx: idx - 1, move, reason };
 
-          move = await askAgent(role, ctx, transcript, reason);
-          reason = guard(role, move, ctx, lastOpponent);
+          move = await askAgent(role, ctx, transcript, reason, stallNote);
+          reason = guard(role, move, ctx, lastOpponent, transcript.length);
           if (reason) {
             // Second violation — force a walk rather than let a bad deal through.
             blocks++;
             await persist("system", "blocked", `${role} agent violated limits twice. Forced walk — ${reason}`, move);
             yield { type: "blocked", role, idx: idx - 1, move, reason: reason + " (second violation, forcing walk)" };
-            move = { ...move, action: "walk", message: "I can't make the numbers work within my limits. Walking away." };
+            move = {
+              ...move,
+              action: "walk",
+              message: "I can't make the numbers work within my limits. Walking away.",
+              reason: `Guard forced the exit: the agent twice proposed terms outside your limits (${reason}).`,
+            };
           }
         }
 
@@ -349,28 +518,52 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
         }
 
         if (move.action === "walk") {
-          await db.negotiation.update({
-            where: { id: negotiationId },
-            data: { status: "walked", rounds: round + 1, guardBlocks: blocks },
-          });
-          yield { type: "walked", role, reason: move.message };
+          await endWalked(role, move.reason || move.message, round + 1);
+          yield { type: "walked", role, reason: move.reason || move.message };
+          yield { type: "done" };
+          return;
+        }
+
+        if (move.action === "escalate") {
+          await endEscalated(role, move.reason, move, round + 1);
+          yield { type: "escalated", role, reason: move.reason, outcome: { price: move.price, days: move.days, deliverables: move.deliverables } };
           yield { type: "done" };
           return;
         }
       }
+
+      // End of a full round: is the gap actually closing? Two LLMs will happily trade near-identical offers forever.
+      const gap = currentGap();
+      if (gap != null && prevGap != null && gap >= prevGap) stalledRounds++;
+      else stalledRounds = 0;
+      prevGap = gap;
+
+      if (stalledRounds >= 2 && gap != null) {
+        yield await endStalled(gap, round + 1);
+        yield { type: "done" };
+        return;
+      }
+      stallNote =
+        stalledRounds === 1 && gap != null
+          ? `the price gap (£${gap}) did not narrow last round. Repeating an offer is not allowed. Make a real concession, accept, escalate to your human, or walk — if it does not move again the negotiation will be closed.`
+          : undefined;
     }
 
     // Ran out of rounds.
-    await db.negotiation.update({
-      where: { id: negotiationId },
-      data: { status: "walked", rounds: MAX_ROUNDS, guardBlocks: blocks },
-    });
-    await persist("system", "info", `No agreement after ${MAX_ROUNDS} rounds.`);
-    yield { type: "walked", role: "system", reason: `No agreement after ${MAX_ROUNDS} rounds.` };
+    const finalGap = currentGap();
+    if (finalGap != null) {
+      yield await endStalled(finalGap, MAX_ROUNDS, `No agreement after ${MAX_ROUNDS} rounds.`);
+    } else {
+      await persist("system", "info", `No agreement after ${MAX_ROUNDS} rounds.`);
+      await endWalked("system", `No agreement after ${MAX_ROUNDS} rounds.`, MAX_ROUNDS);
+      yield { type: "walked", role: "system", reason: `No agreement after ${MAX_ROUNDS} rounds.` };
+    }
     yield { type: "done" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await db.negotiation.update({ where: { id: negotiationId }, data: { status: "pending" } });
     yield { type: "error", reason: msg };
+  } finally {
+    active.delete(negotiationId);
   }
 }

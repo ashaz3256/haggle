@@ -34,7 +34,10 @@ model Negotiation {
   buyerDeadlineDays  Int
   buyerMustHaves     String   @default("")
   buyerStyle         String   @default("friendly")
-  status             String   @default("pending") // pending|negotiating|agreed|walked|paid
+  status             String   @default("pending") // pending|negotiating|needs_human|agreed|walked|paid
+  // Why and by whom the negotiation ended or was escalated (buyer|seller|system). Shown to the humans.
+  endedBy            String?
+  endReason          String?
   agreedPrice        Float?
   agreedDays         Int?
   agreedDeliverables String?  // JSON string[]
@@ -55,7 +58,8 @@ model Turn {
   idx            Int
   role           String   // buyer|seller|system
   message        String
-  action         String   // counter|accept|walk|blocked|info
+  action         String   // counter|accept|walk|escalate|blocked|info
+  reason         String?  // agent's private explanation to its own principal (walk/escalate)
   price          Float?
   days           Int?
   deliverables   String?  // JSON string[]

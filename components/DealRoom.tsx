@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 import PayPalCheckout from "./PayPalCheckout";
 
-type Turn = { idx: number; role: string; action: string; message: string; price: number | null; days: number | null; deliverables: string | null };
+type Turn = { idx: number; role: string; action: string; message: string; reason: string | null; price: number | null; days: number | null; deliverables: string | null };
 type Neg = {
   id: string; status: string; buyerName: string; buyerMax: number; buyerDeadlineDays: number; buyerMustHaves: string;
   agreedPrice: number | null; agreedDays: number | null; agreedDeliverables: string | null;
+  endedBy: string | null; endReason: string | null;
   buyerApproved: boolean; sellerApproved: boolean; paypalOrderId: string | null; rounds: number; guardBlocks: number;
   listing: { id: string; title: string; askingPrice: number; sellerName: string; category: string };
   turns: Turn[];
@@ -18,7 +19,9 @@ export default function DealRoom({ id }: { id: string }) {
   const [live, setLive] = useState(false);
   const [thinking, setThinking] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const started = useRef(false);
+  const esRef = useRef<EventSource | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -28,26 +31,40 @@ export default function DealRoom({ id }: { id: string }) {
 
   useEffect(() => { load(); }, [id]);
 
-  // Kick off the negotiation stream once if it's still pending.
+  // Kick off (or resume) the negotiation stream once while the deal is still in play.
   useEffect(() => {
-    if (!neg || neg.status !== "pending" || started.current) return;
+    if (!neg || (neg.status !== "pending" && neg.status !== "negotiating") || started.current) return;
     started.current = true;
     setLive(true);
-    setThinking("buyer");
+    const lastAgent = [...neg.turns].reverse().find((t) => t.role === "buyer" || t.role === "seller");
+    setThinking(lastAgent?.role === "buyer" ? "seller" : "buyer");
+    esRef.current?.close();
     const es = new EventSource(`/api/negotiations/${id}/stream`);
+    esRef.current = es;
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data);
       if (ev.type === "turn" || ev.type === "blocked") {
         setThinking(ev.type === "blocked" ? ev.role : ev.role === "buyer" ? "seller" : "buyer");
         load();
       }
-      if (ev.type === "agreed" || ev.type === "walked") { setThinking(null); load(); }
+      if (ev.type === "agreed" || ev.type === "walked" || ev.type === "escalated") { setThinking(null); load(); }
       if (ev.type === "error") { setErr(ev.reason); setThinking(null); }
       if (ev.type === "done" || ev.type === "error") { es.close(); setLive(false); load(); }
     };
-    es.onerror = () => { es.close(); setLive(false); setThinking(null); load(); };
-    return () => es.close();
-  }, [neg?.status, id]);
+    es.onerror = () => { es.close(); setLive(false); setThinking(null); setErr("Connection to the agents dropped."); load(); };
+    // No cleanup here on purpose: the status flips pending -> negotiating after the first move, which re-runs
+    // this effect; closing the stream in a cleanup would silently stop the live transcript (the original stall bug).
+  }, [neg?.status, id, retry]);
+
+  // Close the stream only when the component unmounts.
+  useEffect(() => () => { esRef.current?.close(); }, []);
+
+  function resume() {
+    started.current = false;
+    setErr(null);
+    setRetry((r) => r + 1);
+    load();
+  }
 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [neg?.turns.length, thinking]);
 
@@ -56,10 +73,17 @@ export default function DealRoom({ id }: { id: string }) {
     load();
   }
 
+  async function decide(decision: "approve" | "walk") {
+    await fetch(`/api/negotiations/${id}/decide`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) });
+    load();
+  }
+
   if (!neg) return <div className="text-muted">Loading…</div>;
 
   const deliverables: string[] = neg.agreedDeliverables ? JSON.parse(neg.agreedDeliverables) : [];
   const bothApproved = neg.buyerApproved && neg.sellerApproved;
+  const endedByName = neg.endedBy === "buyer" ? `${neg.buyerName}'s agent` : neg.endedBy === "seller" ? `${neg.listing.sellerName}'s agent` : "The server";
+  const escalatedToBuyer = neg.endedBy !== "seller" && !(neg.endReason ?? "").includes("seller should decide");
 
   return (
     <div className="grid gap-6 md:grid-cols-5">
@@ -84,7 +108,14 @@ export default function DealRoom({ id }: { id: string }) {
               </div>
             </div>
           )}
-          {err && <p className="text-red text-sm">{err}</p>}
+          {err && (
+            <div className="flex items-center gap-3">
+              <p className="text-red text-sm">{err}</p>
+              {(neg.status === "pending" || neg.status === "negotiating") && (
+                <button type="button" className="btn-ghost !px-3 !py-1 text-xs" onClick={resume}>Resume</button>
+              )}
+            </div>
+          )}
           <div ref={bottom} />
         </div>
       </div>
@@ -101,9 +132,52 @@ export default function DealRoom({ id }: { id: string }) {
         </div>
 
         {neg.status === "walked" && (
-          <div className="card p-5 border-red/30">
-            <h3 className="font-bold text-red">No deal</h3>
-            <p className="text-sm text-muted mt-1">The agents couldn&apos;t find overlap inside both sides&apos; limits. Adjust your brief and try again.</p>
+          <div className="card p-5 border-red/30 space-y-2">
+            <div>
+              <h3 className="font-bold text-red">No deal</h3>
+              <p className="text-xs text-muted">{endedByName} ended it after {neg.rounds} round{neg.rounds === 1 ? "" : "s"}</p>
+            </div>
+            <div className="rounded-xl bg-mist p-3 text-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted mb-1">Why</div>
+              {neg.endReason ?? "The agents couldn't find overlap inside both sides' limits."}
+            </div>
+            <p className="text-xs text-muted">Walking away was inside the brief. Adjust your limits and send the agent back in if you want to.</p>
+          </div>
+        )}
+
+        {neg.status === "needs_human" && neg.agreedPrice != null && (
+          <div className="card p-5 space-y-4 border-amber/40">
+            <div>
+              <h3 className="font-bold text-amber">Your agent needs a decision</h3>
+              <p className="text-xs text-muted">
+                {endedByName} stopped after {neg.rounds} round{neg.rounds === 1 ? "" : "s"} · waiting on {escalatedToBuyer ? neg.buyerName : neg.listing.sellerName}
+              </p>
+            </div>
+            <div className="rounded-xl bg-mist p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted">On the table</span>
+                <span className="text-3xl font-extrabold text-navy">{money(neg.agreedPrice)}</span>
+              </div>
+              {escalatedToBuyer && (
+                <div className="text-xs text-amber font-semibold mt-1">
+                  {money(neg.agreedPrice - neg.buyerMax)} over your max of {money(neg.buyerMax)}
+                  {neg.agreedDays != null && neg.agreedDays > neg.buyerDeadlineDays ? ` · ${neg.agreedDays - neg.buyerDeadlineDays}d past your deadline` : ""}
+                </div>
+              )}
+              <div className="mt-3 text-sm"><span className="text-muted">Delivery:</span> {neg.agreedDays} days</div>
+              {deliverables.length > 0 && (
+                <ul className="mt-2 text-sm list-disc pl-5 space-y-0.5">{deliverables.map((d, i) => <li key={i}>{d}</li>)}</ul>
+              )}
+            </div>
+            <div className="rounded-xl border border-amber/30 bg-amber/5 p-3 text-sm">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-amber mb-1">Agent&apos;s note to you</div>
+              {neg.endReason}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs text-muted">The agent will not stretch your limits on its own. Only you can.</p>
+              <button onClick={() => decide("approve")} className="w-full btn btn-primary">Stretch my limit · take {money(neg.agreedPrice)}</button>
+              <button onClick={() => decide("walk")} className="w-full btn btn-ghost">Walk away</button>
+            </div>
           </div>
         )}
 
@@ -118,8 +192,9 @@ export default function DealRoom({ id }: { id: string }) {
                 <span className="text-sm text-muted">Agreed price</span>
                 <span className="text-3xl font-extrabold text-navy">{money(neg.agreedPrice!)}</span>
               </div>
-              <div className="text-xs text-green font-semibold mt-1">
-                {money(neg.listing.askingPrice - neg.agreedPrice!)} under asking · {money(neg.buyerMax - neg.agreedPrice!)} under your max
+              <div className={`text-xs font-semibold mt-1 ${neg.agreedPrice! > neg.buyerMax ? "text-amber" : "text-green"}`}>
+                {money(neg.listing.askingPrice - neg.agreedPrice!)} under asking ·{" "}
+                {neg.agreedPrice! > neg.buyerMax ? `${money(neg.agreedPrice! - neg.buyerMax)} over your max (you approved the stretch)` : `${money(neg.buyerMax - neg.agreedPrice!)} under your max`}
               </div>
               <div className="mt-3 text-sm"><span className="text-muted">Delivery:</span> {neg.agreedDays} days</div>
               {deliverables.length > 0 && (
@@ -174,16 +249,18 @@ function ApproveButton({ label, done, onClick }: { label: string; done: boolean;
 function StatusPill({ status, live }: { status: string; live: boolean }) {
   const map: Record<string, string> = {
     pending: "bg-mist text-muted", negotiating: "bg-blue/10 text-blue", agreed: "bg-green/10 text-green",
-    walked: "bg-red/10 text-red", paid: "bg-green text-white",
+    walked: "bg-red/10 text-red", paid: "bg-green text-white", needs_human: "bg-amber/15 text-amber",
   };
-  return <span className={`pill ${map[status] ?? ""}`}>{live && <span className="w-1.5 h-1.5 rounded-full bg-blue mr-1.5 animate-pulse" />}{status}</span>;
+  const label = status === "needs_human" ? "needs you" : status;
+  return <span className={`pill ${map[status] ?? ""}`}>{live && <span className="w-1.5 h-1.5 rounded-full bg-blue mr-1.5 animate-pulse" />}{label}</span>;
 }
 
 function Bubble({ t, buyerName, sellerName }: { t: Turn; buyerName: string; sellerName: string }) {
   if (t.role === "system") {
+    const guard = t.action === "blocked";
     return (
-      <div className="rise mx-auto max-w-md rounded-xl border border-red/30 bg-red/5 px-4 py-2.5 text-xs text-red">
-        <span className="font-bold">⛔ Guard</span> · {t.message}
+      <div className={`rise mx-auto max-w-md rounded-xl border px-4 py-2.5 text-xs ${guard ? "border-red/30 bg-red/5 text-red" : "border-amber/30 bg-amber/5 text-amber"}`}>
+        <span className="font-bold">{guard ? "⛔ Guard" : "⏸ System"}</span> · {t.message}
       </div>
     );
   }
@@ -195,10 +272,16 @@ function Bubble({ t, buyerName, sellerName }: { t: Turn; buyerName: string; sell
         <div className={`text-[11px] font-semibold uppercase tracking-wide mb-1 ${isBuyer ? "text-sky" : "text-muted"}`}>
           {isBuyer ? `${buyerName}'s agent` : `${sellerName}'s agent`}
           {t.action === "accept" && " · ACCEPTS"}
-          {t.action === "walk" && " · WALKS"}
+          {t.action === "walk" && " · WALKS AWAY"}
+          {t.action === "escalate" && " · ASKS ITS HUMAN"}
         </div>
         <p className="text-sm leading-relaxed">{t.message}</p>
-        {t.price != null && t.action !== "walk" && (
+        {(t.action === "walk" || t.action === "escalate") && t.reason && (
+          <p className={`mt-2 text-xs italic border-l-2 pl-2 ${isBuyer ? "border-sky text-white/80" : "border-amber text-muted"}`}>
+            Private note to {isBuyer ? buyerName : sellerName}: {t.reason}
+          </p>
+        )}
+        {t.price != null && t.action !== "walk" && t.action !== "escalate" && (
           <div className={`mt-2 inline-flex flex-wrap gap-1.5 text-xs ${isBuyer ? "text-white/90" : "text-navy"}`}>
             <span className={`rounded-md px-2 py-0.5 font-bold ${isBuyer ? "bg-white/15" : "bg-white"}`}>{money(t.price)}</span>
             <span className={`rounded-md px-2 py-0.5 ${isBuyer ? "bg-white/15" : "bg-white"}`}>{t.days}d</span>

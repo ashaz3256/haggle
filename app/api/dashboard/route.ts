@@ -7,21 +7,26 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json(
-    rows.map((n) => ({
+    rows.map((n) => {
+      // needs_human also stores the terms on the table in agreedPrice; only a real deal counts here.
+      const dealt = n.status === "agreed" || n.status === "paid";
+      const agreed = dealt ? n.agreedPrice : null;
+      return {
       id: n.id,
       listing: n.listing.title,
       buyer: n.buyerName,
       asking: n.listing.askingPrice,
       budget: n.buyerMax,
-      agreed: n.agreedPrice,
-      savedVsAsking: n.agreedPrice ? n.listing.askingPrice - n.agreedPrice : null,
-      underBudget: n.agreedPrice ? n.buyerMax - n.agreedPrice : null,
-      days: n.agreedDays,
+      agreed,
+      savedVsAsking: agreed ? n.listing.askingPrice - agreed : null,
+      underBudget: agreed ? n.buyerMax - agreed : null,
+      days: dealt ? n.agreedDays : null,
       rounds: n.rounds,
       guardBlocks: n.guardBlocks,
       status: n.status,
       paypalOrderId: n.paypalOrderId,
       createdAt: n.createdAt,
-    }))
+      };
+    })
   );
 }

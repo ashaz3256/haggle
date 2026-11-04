@@ -21,6 +21,16 @@ A buyer describes what they want and sets a private max budget and deadline. A s
 - AG Grid for the deals dashboard
 - SSE streaming so you watch the agents negotiate live
 
+## Demo
+
+3-minute script with fallbacks: [docs/DEMO.md](docs/DEMO.md). Pitch: [docs/PITCH.md](docs/PITCH.md).
+
+| Brief your agent | Deal agreed, buyer approved |
+|---|---|
+| ![Brief form](docs/screenshots/listing-brief.png) | ![Deal agreed, buyer approved](docs/screenshots/deal-buyer-approved.png) |
+
+PayPal payment capture in the sandbox popup has not been verified end to end. Create-order has.
+
 ## Run it
 
 ```bash

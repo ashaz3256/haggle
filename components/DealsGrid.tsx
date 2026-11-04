@@ -31,8 +31,8 @@ export default function DealsGrid() {
     { field: "listing", headerName: "Listing", flex: 2, cellRenderer: (p: { data: Row }) => <Link className="text-blue font-semibold" href={`/deal/${p.data.id}`}>{p.data.listing}</Link> },
     { field: "buyer", flex: 1 },
     { field: "status", width: 120, cellRenderer: (p: { value: string }) => {
-      const c: Record<string, string> = { paid: "bg-green text-white", agreed: "bg-green/10 text-green", walked: "bg-red/10 text-red", negotiating: "bg-blue/10 text-blue", pending: "bg-mist text-muted" };
-      return <span className={`pill ${c[p.value] ?? ""}`}>{p.value}</span>;
+      const c: Record<string, string> = { paid: "bg-green text-white", agreed: "bg-green/10 text-green", walked: "bg-red/10 text-red", negotiating: "bg-blue/10 text-blue", pending: "bg-mist text-muted", needs_human: "bg-amber/15 text-amber" };
+      return <span className={`pill ${c[p.value] ?? ""}`}>{p.value === "needs_human" ? "needs human" : p.value}</span>;
     } },
     { field: "asking", valueFormatter: gbp, width: 100 },
     { field: "budget", headerName: "Buyer max", valueFormatter: gbp, width: 110 },

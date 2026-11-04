@@ -9,7 +9,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (data: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      // If the client disconnects, enqueue throws. Swallow it and keep driving the run so the negotiation
+      // completes server-side; a reconnecting client attaches to it (see runNegotiation).
+      const send = (data: unknown) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* client gone */ }
+      };
       try {
         for await (const ev of runNegotiation(id)) {
           send(ev);
@@ -18,7 +22,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       } catch (e) {
         send({ type: "error", reason: e instanceof Error ? e.message : String(e) });
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       }
     },
   });
