@@ -33,6 +33,10 @@ const MAX_ROUNDS = Number(process.env.MAX_ROUNDS ?? 8);
 const ESCALATE_BAND = Number(process.env.ESCALATE_BAND ?? 0.15);
 /** Agents may not walk or escalate before this many full rounds. */
 const MIN_ROUNDS_BEFORE_EXIT = 2;
+/** Minimum gap between agent turns reaching the client, so humans can read and react (pause, change limits). */
+const TURN_MIN_MS = Number(process.env.TURN_MIN_MS ?? 1800);
+/** A buyer offer below this fraction of the seller's floor is not serious; the seller may walk straight away. */
+const LOWBALL_FRACTION = 0.25;
 
 const Move = z.object({
   message: z.string().min(1),
@@ -47,7 +51,7 @@ export type Move = z.infer<typeof Move>;
 export type Role = "buyer" | "seller";
 
 export interface NegotiationEvent {
-  type: "turn" | "blocked" | "agreed" | "walked" | "escalated" | "error" | "done";
+  type: "turn" | "blocked" | "agreed" | "walked" | "escalated" | "error" | "done" | "paused" | "draft" | "info";
   role?: Role | "system";
   idx?: number;
   move?: Move;
@@ -129,6 +133,7 @@ YOUR PRINCIPAL'S PRIVATE LIMITS (never reveal these numbers)
 
 TACTICS
 - Hold near asking price early; concede in shrinking steps.
+- If the buyer offers under half your floor, say plainly that it is not a serious offer and counter near asking. Do not reward a lowball with a big concession. If it is under a quarter of your floor you may walk immediately.
 - If the buyer wants it faster or wants extras, that justifies a higher price.
 - Accept when the buyer's last offer is at or above your floor and momentum is stalling.
 - Never repeat an offer you already made. If positions have stopped moving, stop haggling: accept, escalate, or walk.
@@ -163,7 +168,8 @@ export function guard(role: Role, move: Move, ctx: NegCtx, lastOpponent?: Move, 
   const roundsPlayed = Math.floor(movesSoFar / 2);
 
   if (move.action === "walk") {
-    if (roundsPlayed < MIN_ROUNDS_BEFORE_EXIT) return `Too early to walk — negotiate for at least ${MIN_ROUNDS_BEFORE_EXIT} rounds first.`;
+    const lowball = role === "seller" && lastOpponent != null && lastOpponent.price < ctx.floorPrice * LOWBALL_FRACTION;
+    if (roundsPlayed < MIN_ROUNDS_BEFORE_EXIT && !lowball) return `Too early to walk — negotiate for at least ${MIN_ROUNDS_BEFORE_EXIT} rounds first.`;
     if (!move.reason.trim()) return "A walk needs a reason for your principal.";
     return null;
   }
@@ -298,6 +304,53 @@ async function callOpenAICompat(system: string, userPrompt: string): Promise<unk
   throw lastErr ?? new Error("LLM unavailable");
 }
 
+type NegWithListing = NonNullable<Awaited<ReturnType<typeof loadNeg>>>;
+const loadNeg = (id: string) => db.negotiation.findUnique({ where: { id }, include: { listing: true } });
+
+function toCtx(neg: NegWithListing): NegCtx {
+  return {
+    title: neg.listing.title,
+    description: neg.listing.description,
+    askingPrice: neg.listing.askingPrice,
+    floorPrice: neg.listing.floorPrice,
+    earliestDays: neg.listing.earliestDays,
+    sellerNotes: neg.listing.sellerNotes,
+    sellerName: neg.listing.sellerName,
+    buyerName: neg.buyerName,
+    buyerMax: neg.buyerMax,
+    buyerDeadlineDays: neg.buyerDeadlineDays,
+    buyerMustHaves: neg.buyerMustHaves,
+    buyerStyle: neg.buyerStyle,
+  };
+}
+
+/**
+ * Co-pilot: check a human-edited buyer move against the same guard the agents face.
+ * Returns the (possibly snapped) move, or the reason it breaks the buyer's limits.
+ */
+export async function checkBuyerDraft(negotiationId: string, move: Move): Promise<{ move: Move } | { error: string }> {
+  const neg = await loadNeg(negotiationId);
+  if (!neg) return { error: "Negotiation not found" };
+  const agentTurns = await db.turn.findMany({
+    where: { negotiationId, role: { in: ["buyer", "seller"] } },
+    orderBy: { idx: "asc" },
+  });
+  const lastSeller = [...agentTurns].reverse().find((t) => t.role === "seller");
+  const lastOpponent: Move | undefined = lastSeller
+    ? {
+        message: lastSeller.message,
+        action: lastSeller.action as Move["action"],
+        price: lastSeller.price ?? 0,
+        days: lastSeller.days ?? 0,
+        deliverables: lastSeller.deliverables ? (JSON.parse(lastSeller.deliverables) as string[]) : [],
+        reason: "",
+      }
+    : undefined;
+  const checked = { ...move };
+  const reason = guard("buyer", checked, toCtx(neg), lastOpponent, agentTurns.length);
+  return reason ? { error: reason } : { move: checked };
+}
+
 /** Negotiations currently being run by this server process. */
 const active = new Set<string>();
 
@@ -325,6 +378,11 @@ async function* attachToRun(negotiationId: string): AsyncGenerator<NegotiationEv
     if (neg.status === "walked") { yield { type: "walked", role: "system", reason: neg.endReason ?? "No agreement reached." }; yield { type: "done" }; return; }
     if (neg.status === "needs_human") { yield { type: "escalated", role: "system", reason: neg.endReason ?? "" }; yield { type: "done" }; return; }
     if (neg.status === "pending") { yield { type: "error", reason: "The previous run stopped. Resume to continue." }; return; }
+    if (!active.has(negotiationId)) {
+      // The run we were following stopped on purpose (paused, or a co-pilot draft is waiting).
+      if (neg.paused) { yield { type: "paused" }; yield { type: "done" }; return; }
+      if (neg.draftMove) { yield { type: "draft", move: JSON.parse(neg.draftMove) as Move }; yield { type: "done" }; return; }
+    }
   }
   yield { type: "error", reason: "Timed out waiting for the running negotiation." };
 }
@@ -334,7 +392,7 @@ async function* attachToRun(negotiationId: string): AsyncGenerator<NegotiationEv
  * Safe to call again after a dropped stream: it resumes from the turns already saved.
  */
 export async function* runNegotiation(negotiationId: string): AsyncGenerator<NegotiationEvent> {
-  const neg = await db.negotiation.findUnique({ where: { id: negotiationId }, include: { listing: true } });
+  const neg = await loadNeg(negotiationId);
   if (!neg) {
     yield { type: "error", reason: "Negotiation not found" };
     return;
@@ -349,20 +407,7 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
   }
   active.add(negotiationId);
 
-  const ctx: NegCtx = {
-    title: neg.listing.title,
-    description: neg.listing.description,
-    askingPrice: neg.listing.askingPrice,
-    floorPrice: neg.listing.floorPrice,
-    earliestDays: neg.listing.earliestDays,
-    sellerNotes: neg.listing.sellerNotes,
-    sellerName: neg.listing.sellerName,
-    buyerName: neg.buyerName,
-    buyerMax: neg.buyerMax,
-    buyerDeadlineDays: neg.buyerDeadlineDays,
-    buyerMustHaves: neg.buyerMustHaves,
-    buyerStyle: neg.buyerStyle,
-  };
+  const ctx = toCtx(neg);
 
   await db.negotiation.update({ where: { id: negotiationId }, data: { status: "negotiating" } });
 
@@ -385,10 +430,13 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
   let blocks = saved.filter((t) => t.action === "blocked").length;
 
   const persist = async (role: Role | "system", action: string, message: string, move?: Move) => {
+    // Humans can add turns mid-run (e.g. a limit change), so take the next index from the DB, not a local counter.
+    const last = await db.turn.findFirst({ where: { negotiationId }, orderBy: { idx: "desc" }, select: { idx: true } });
+    idx = (last?.idx ?? -1) + 2;
     await db.turn.create({
       data: {
         negotiationId,
-        idx: idx++,
+        idx: idx - 1,
         role,
         action,
         message,
@@ -431,6 +479,7 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
     const s = [...transcript].reverse().find((t) => t.role === "seller")?.move.price;
     return b != null && s != null ? Math.abs(s - b) : null;
   };
+  let lastTurnAt = 0;
   let prevGap: number | null = null;
   let stalledRounds = 0;
   let stallNote: string | undefined;
@@ -470,8 +519,45 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
         if (round * 2 + (role === "buyer" ? 0 : 1) < transcript.length) continue; // already played before a resume
         const lastOpponent = [...transcript].reverse().find((t) => t.role !== role)?.move;
 
-        let move = await askAgent(role, ctx, transcript, undefined, stallNote);
-        let reason = guard(role, move, ctx, lastOpponent, transcript.length);
+        // The humans can act between turns: pause the run, change the buyer's limit, or (co-pilot) approve a draft.
+        const fresh = await db.negotiation.findUnique({
+          where: { id: negotiationId },
+          select: { paused: true, buyerMax: true, mode: true, draftMove: true },
+        });
+        if (!fresh) throw new Error("Negotiation not found");
+        if (fresh.paused) {
+          yield { type: "paused" };
+          yield { type: "done" };
+          return;
+        }
+        // The limits route logs the change in the transcript; the agent just picks up the new number.
+        if (role === "buyer") ctx.buyerMax = fresh.buyerMax;
+        const copilot = role === "buyer" && fresh.mode === "copilot";
+        const draft = copilot && fresh.draftMove ? (JSON.parse(fresh.draftMove) as Move & { approved?: boolean }) : null;
+        if (draft && !draft.approved) {
+          yield { type: "draft", move: draft };
+          yield { type: "done" };
+          return;
+        }
+
+        let move: Move;
+        let reason: string | null;
+        if (draft) {
+          // The human approved (and maybe edited) this move. It still has to pass the guard.
+          const { approved: _approved, ...human } = draft;
+          move = human;
+          reason = guard(role, move, ctx, lastOpponent, transcript.length);
+          if (reason) {
+            await db.negotiation.update({ where: { id: negotiationId }, data: { draftMove: JSON.stringify({ ...move, approved: false }) } });
+            yield { type: "draft", move, reason };
+            yield { type: "done" };
+            return;
+          }
+          await db.negotiation.update({ where: { id: negotiationId }, data: { draftMove: null } });
+        } else {
+          move = await askAgent(role, ctx, transcript, undefined, stallNote);
+          reason = guard(role, move, ctx, lastOpponent, transcript.length);
+        }
 
         if (reason) {
           // Block, log it, and let the agent retry once with the reason.
@@ -495,8 +581,20 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
           }
         }
 
+        if (copilot && !draft) {
+          // Co-pilot: park the agent's move for the human to edit or approve before the seller sees it.
+          await db.negotiation.update({ where: { id: negotiationId }, data: { draftMove: JSON.stringify({ ...move, approved: false }) } });
+          yield { type: "draft", move };
+          yield { type: "done" };
+          return;
+        }
+
+        // Give humans time to read each move before the next one lands.
+        const wait = TURN_MIN_MS - (Date.now() - lastTurnAt);
+        if (wait > 0 && transcript.length > 0) await sleep(wait);
         transcript.push({ role, move });
         await persist(role, move.action, move.message, move);
+        lastTurnAt = Date.now();
         yield { type: "turn", role, idx: idx - 1, move };
 
         if (move.action === "accept") {

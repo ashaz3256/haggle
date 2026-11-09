@@ -20,6 +20,8 @@ model Listing {
   earliestDays  Int      @default(3)
   sellerNotes   String   @default("")
   sellerName    String   @default("Seller")
+  // resized JPEG data URL from /sell; never shown to the agents
+  imageData     String?
   createdAt     DateTime @default(now())
   negotiations  Negotiation[]
 }
@@ -47,6 +49,11 @@ model Negotiation {
   paypalCaptureId    String?
   rounds             Int      @default(0)
   guardBlocks        Int      @default(0)
+  // auto = agents run to the end; copilot = the buyer approves/edits each buyer move before it is sent
+  mode               String   @default("auto")
+  paused             Boolean  @default(false)
+  // copilot: the buyer agent's pending move, JSON Move + { approved: boolean }
+  draftMove          String?
   createdAt          DateTime @default(now())
   turns              Turn[]
 }

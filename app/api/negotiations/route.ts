@@ -9,6 +9,7 @@ const Body = z.object({
   buyerDeadlineDays: z.number().int().positive(),
   buyerMustHaves: z.string().default(""),
   buyerStyle: z.enum(["friendly", "firm", "aggressive"]).default("friendly"),
+  mode: z.enum(["auto", "copilot"]).default("auto"),
 });
 
 /** Per-IP cap on starting negotiations (each one costs ~a dozen LLM calls). In-memory, per server process. */

@@ -21,11 +21,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="inline-block w-7 h-7 rounded-lg bg-gradient-to-br from-navy to-blue" />
               Haggle
             </Link>
-            <nav className="flex items-center gap-1 text-sm font-medium">
-              <Link href="/how-it-works" className="px-3 py-1.5 rounded-full hover:bg-mist">How it works</Link>
+            <nav className="flex items-center gap-1 text-sm font-medium whitespace-nowrap">
+              <Link href="/how-it-works" className="hidden sm:inline-flex px-3 py-1.5 rounded-full hover:bg-mist">How it works</Link>
               <Link href="/" className="px-3 py-1.5 rounded-full hover:bg-mist">Listings</Link>
-              <Link href="/dashboard" className="px-3 py-1.5 rounded-full hover:bg-mist">Dashboard</Link>
-              <Link href="/sell" className="btn-blue !py-1.5 ml-1">Post a listing</Link>
+              <Link href="/dashboard" className="hidden sm:inline-flex px-3 py-1.5 rounded-full hover:bg-mist">Dashboard</Link>
+              <Link href="/sell" className="btn-blue !py-1.5 !px-4 ml-1"><span className="sm:hidden">Sell</span><span className="hidden sm:inline">Post a listing</span></Link>
+              <details className="sm:hidden relative group">
+                <summary aria-label="More pages" className="list-none cursor-pointer w-9 h-9 ml-1 grid place-items-center rounded-full hover:bg-mist [&::-webkit-details-marker]:hidden">
+                  <span className="block w-4 space-y-1"><span className="block h-0.5 bg-navy rounded" /><span className="block h-0.5 bg-navy rounded" /><span className="block h-0.5 bg-navy rounded" /></span>
+                </summary>
+                <div className="absolute right-0 mt-2 w-44 card p-1.5 flex flex-col">
+                  <Link href="/how-it-works" className="px-3 py-2 rounded-xl hover:bg-mist">How it works</Link>
+                  <Link href="/dashboard" className="px-3 py-2 rounded-xl hover:bg-mist">Dashboard</Link>
+                </div>
+              </details>
             </nav>
           </div>
         </header>

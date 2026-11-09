@@ -11,13 +11,14 @@ const Body = z.object({
   earliestDays: z.number().int().positive(),
   sellerNotes: z.string().default(""),
   sellerName: z.string().default("Seller"),
+  imageData: z.string().startsWith("data:image/").max(600_000).optional(),
 });
 
 export async function GET() {
   const listings = await db.listing.findMany({ orderBy: { createdAt: "desc" } });
   // Strip private seller fields before sending to the client.
   return NextResponse.json(
-    listings.map(({ floorPrice, earliestDays, sellerNotes, ...pub }) => pub)
+    listings.map(({ floorPrice, earliestDays, sellerNotes, imageData, ...pub }) => ({ ...pub, hasImage: imageData != null }))
   );
 }
 
