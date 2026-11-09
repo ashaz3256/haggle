@@ -94,9 +94,15 @@ lib/paypal.ts        Orders API v2 client
 prisma/              schema + seed
 ```
 
-## Deploy (Render)
+## Deploy (Railway)
 
-Web service → build `npm install && npm run build` → start `npm start`. Add the env vars above. SQLite lives on the instance disk (fine for a demo; add a Render disk for persistence).
+The app runs as one long-lived Node process with SQLite on a volume, so any host that offers a persistent disk works. Railway setup:
+
+1. `railway init`, then `railway add -s haggle` and `railway service haggle`.
+2. `railway volume add -m /data` and set `DATABASE_URL=file:/data/haggle.db` plus the env vars above. Optionally `ACCESS_CODE` to gate the instance and `NEG_RATE_LIMIT` (default 12 per IP per hour).
+3. `railway up` from this folder. `npm start` runs `prisma db push`, the idempotent seed, then `next start`.
+
+Render or Fly work the same way with a persistent disk. Vercel needs a hosted SQLite (Turso) instead of the file adapter in `lib/db.ts`.
 
 ## License
 

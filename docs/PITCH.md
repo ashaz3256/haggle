@@ -20,6 +20,7 @@ Haggle lets your agent negotiate with the seller's agent inside limits you set. 
 
 - **Agent vs agent.** Both sides are automated, each with private information. That is real negotiation, not a chatbot answering questions.
 - **Server-side guard.** `guard()` in `lib/negotiate.ts` is the trust boundary. A move over the buyer's max or under the seller's floor is rejected, logged and retried once. A second violation forces a walk. The prompt asks the model to behave. The code makes sure it does.
+- **Agents that know when to stop.** Most agent-vs-agent demos loop until someone caves. Haggle's agents can walk away with a written reason, or escalate to their human when the other side's best offer is within 15% of the brief. The server also detects a stalled price gap and ends it. Every negotiation finishes in one of three labelled outcomes: deal, needs a human, or no deal. The agent is never allowed to stretch its principal's limit; only the human can.
 - **Human approval on both sides.** Agents reach a deal. Humans own it. `/api/paypal/create-order` refuses unless the deal is `agreed` and both `buyerApproved` and `sellerApproved` are true.
 - **PayPal checkout.** Orders API v2 gives a real, familiar payment step. The agents never touch money.
 
@@ -37,6 +38,7 @@ Real:
 
 - Two LLM agents negotiating live. A full run takes about 10 to 20 seconds.
 - Server-side guard, retry and forced walk.
+- Three endings, each verified on the public instance: agreed (£260 brief), escalated to a human with the agent's note (£224 brief), walked by the stall detector with a reason (£160 brief). The human override path (stretch my limit) is verified too.
 - Persistence of every turn. A reload or dropped connection mid-run is handled: the server finishes the run and the page re-attaches or resumes from saved turns. A Resume button appears if the connection drops.
 - Dual approval gate on the server.
 - PayPal sandbox create-order returns a real sandbox order id (verified).
@@ -46,24 +48,54 @@ Mocked or simplified:
 - No user accounts or login. The "buyer" and "seller" approve from the same deal page. Anyone with the deal URL can click either button.
 - PayPal is sandbox only. No real money.
 - Seller side is a seeded listing (3 listings) or the `/sell` form. The seller's limits are entered once, not negotiated live with the seller.
-- SQLite on local disk.
+- SQLite on a Railway volume. Single server process; the per-IP rate limit is in memory.
 
 Untested or unverified:
 
 - **Completing a payment in the PayPal popup (capture).** It needs a sandbox personal account to log in and pay. The capture route exists but has not been exercised end to end on this machine.
 - There are no automated tests. The only check is `npx tsc --noEmit`.
-- The guard-block path depends on the model stepping out of bounds. It has not been forced in a scripted test, so it may not trigger in a demo run.
-- Production deployment (Render) is documented but not verified here.
+- The guard-block path depends on the model stepping out of bounds. It shows up often on low-budget briefs but is not guaranteed on a given run.
+- Deployed and verified on Railway: https://haggle-production-b343.up.railway.app (open; per-IP rate limit on starting negotiations).
 - Known cosmetic: a React hydration warning in dev, caused by a browser extension.
+
+## Judging criteria (from the official rules, 2026-11-04)
+
+Stage one is pass/fail: fits the theme and "reasonably applies" PayPal APIs. Stage two scores five equally weighted criteria. Ties break in this order, so Technological Implementation matters most.
+
+| Criterion (official wording, shortened) | Where Haggle proves it | Demo moment (`DEMO.md`) |
+|---|---|---|
+| **Technological Implementation**: thorough, skilful use of the PayPal platform and AI tools; genuine, working, non-trivial | PayPal Orders v2 create + capture behind a server-side dual-approval gate. Two LLM agents with private information, forced structured tool calls, zod validation, `guard()` as the trust boundary, stall detection, escalation, SSE streaming with resume. AG Grid dashboard. | 0:40 live stream; 1:05 guard; 2:10 PayPal order |
+| **Design**: a complete, coherent product, not a proof of concept | Listings, brief form, live deal room, three labelled endings with reasons, human decision card, approvals, PayPal checkout, dashboard, tutorial page. Nothing is a mockup. | 0:25 brief; 1:25 outcome card; /how-it-works |
+| **Potential Impact**: a credible, specific case for a real problem and audience; the demo actually addresses it | Problem: people will not let an agent spend money unsupervised, and agent-to-agent haggling loops forever. Audience: secondhand, freelance and quote-based services. Shown: private limits, guard, walk/escalate, human approval before money. | Open with the problem; "needs you" ending |
+| **Innovation / Idea**: creative, novel, different from existing concepts | Agent vs agent with asymmetric private information, and agents that know when to stop: walk with a reason, escalate within 15%, server ends stalls. Best Offer on eBay is a form; this is a negotiation with a safety boundary. | 1:05 to 1:45 |
+| **Presentation**: video shows it working end to end; pitch says what, for whom, why; easy to follow | Under 3 minutes. Three endings in one video. State problem, audience, and "agents negotiate, guards enforce, humans approve, PayPal settles". | Whole script |
+
+Honorable-mention prizes we should name in the submission text:
+
+- **Best Use of Agentic Commerce** ($5k): this is the core of the project. Say the phrase.
+- **Best Use of PayPal + AI** ($5k): PayPal order creation is gated on AI-negotiated, human-approved terms.
+- **Best Demo Delivery** ($5k): the three-outcome demo is the hook.
+- **Best Use of AG Grid** (sponsor prize, $5k / $2k / $1k): the dashboard is AG Grid Community with a custom theme. Mention it explicitly in the Tools field; it is a separate prize pool with less competition.
+
+## Submission checklist (deadline Thu 12 Nov 2026, 12:00 pm Pacific)
+
+- [ ] **Text description** on Devpost: features and functionality. Reuse "Solution" and "Why this combination is interesting" above.
+- [ ] **Tools field**: Nebius (Qwen3-235B-A22B, with gpt-oss-120b and Qwen3-30B fallbacks) through an OpenAI-compatible endpoint; PayPal Orders v2 sandbox + JS SDK; AG Grid Community; Next.js 15, Prisma, SQLite; hosted on Railway.
+- [ ] **Functional demo**: hosted URL https://haggle-production-b343.up.railway.app, open to judges with no login.
+- [ ] **Public repo**: https://github.com/ashaz3256/haggle. MIT `LICENSE` is at the root; check GitHub shows "MIT license" in the About box.
+- [ ] **README run instructions**: present (install, `.env`, `db:push`, `db:seed`, `dev`). Add a line that the sandbox PayPal client id/secret are the judge's own from developer.paypal.com.
+- [ ] **Demo video**: under 3 minutes, on YouTube, public, link on the form. Follow `DEMO.md`. No copyrighted music. Show all three endings and the PayPal popup.
+- [ ] **New or significantly updated**: the repo history shows everything was built during the submission period (first commit after 1 Oct 2026). Say so in the description.
+- [ ] **Rehearse the PayPal popup payment** with a sandbox personal account before recording.
 
 ## Demo moments (for judges)
 
-If judging criteria are provided, map them here. Until then:
+Legacy mapping kept for reference; the table above supersedes it.
 
 | Idea | Demo moment (see `DEMO.md`) |
 |---|---|
 | Agent autonomy | 0:40, bubbles stream live |
-| Safety / trust | 1:05, guard blocks counter; 1:45, dual approval |
+| Safety / trust | 1:05, guard blocks counter; the "needs you" and "no deal" endings (DEMO.md, Three outcomes); 1:45, dual approval |
 | Payments | 2:10, PayPal button and create-order |
 | Usability | 0:25, one short brief form |
 | Transparency | 2:40, dashboard of rounds, blocks and orders |

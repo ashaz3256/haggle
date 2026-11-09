@@ -3,7 +3,7 @@
 Setup before you start (not on the clock):
 
 - Public instance: https://haggle-production-b343.up.railway.app (Railway, SQLite on a `/data` volume, deployed 2026-11-04 with `railway up` from `haggle/haggle/`). Use this for the demo; localhost is the fallback.
-- The public instance is behind an access code (`ACCESS_CODE` in `.env` and on the Railway service). Open it once as `https://haggle-production-b343.up.railway.app/?code=<ACCESS_CODE>` on the demo machine; the cookie lasts 7 days. Give judges the same link. Without the code, pages show a gate form and the API returns 401. Each IP may start at most 12 negotiations per hour (`NEG_RATE_LIMIT`).
+- The public instance is open (no access code). Each IP may start at most 12 negotiations per hour (`NEG_RATE_LIMIT`). An optional gate exists: set `ACCESS_CODE` on the Railway service to require it; share links as `?code=<ACCESS_CODE>`.
 - Fallback dev server at http://localhost:3000 (`npm run dev` from `haggle/haggle/`).
 - Tab 1: the public URL (start here).
 - Tab 2 (backup): an already-agreed deal, e.g. `http://localhost:3000/deal/<id>` from an earlier run. Both approvals done if you want to show the PayPal button.
