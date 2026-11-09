@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const rows = await db.listing.findMany({ orderBy: { createdAt: "desc" } });
-  const listings = rows.map(({ imageData, ...l }) => ({ ...l, hasImage: imageData != null }));
+  const listings = rows.map(({ imageData, ownerToken, floorPrice, earliestDays, sellerNotes, ...l }) => ({ ...l, hasImage: imageData != null }));
 
   return (
     <div className="space-y-8">

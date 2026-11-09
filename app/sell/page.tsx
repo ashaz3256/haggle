@@ -102,7 +102,7 @@ export default function SellPage() {
     const json = await res.json();
     setBusy(false);
     if (!res.ok) return setErr(typeof json.error === "string" ? json.error : "Something's missing. Check the title and description.");
-    r.push(`/listing/${json.id}`);
+    r.push(`/listing/${json.id}?posted=1`);
   }
 
   return (

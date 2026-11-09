@@ -22,6 +22,8 @@ model Listing {
   sellerName    String   @default("Seller")
   // resized JPEG data URL from /sell; never shown to the agents
   imageData     String?
+  // secret held in the posting browser's cookie; marks who owns the listing (no accounts)
+  ownerToken    String?
   createdAt     DateTime @default(now())
   negotiations  Negotiation[]
 }

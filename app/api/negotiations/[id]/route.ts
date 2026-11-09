@@ -9,7 +9,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   });
   if (!neg) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Public view only: no private limits from either side.
-  const { floorPrice, earliestDays, sellerNotes, imageData, ...listing } = neg.listing;
+  const { floorPrice, earliestDays, sellerNotes, imageData, ownerToken, ...listing } = neg.listing;
   const { buyerMax, buyerDeadlineDays, buyerMustHaves, ...rest } = neg;
   return NextResponse.json({ ...rest, listing, buyerMax, buyerDeadlineDays, buyerMustHaves });
 }
