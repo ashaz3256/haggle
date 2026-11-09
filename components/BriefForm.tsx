@@ -49,8 +49,8 @@ export default function BriefForm({ listingId, askingPrice }: { listingId: strin
         <div>
           <label className="label">Max budget</label>
           <div className="relative">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
-            <input className="input pl-7" inputMode="decimal" required value={f.buyerMax} onChange={digits("buyerMax")} />
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
+            <input className="input !pl-8" inputMode="decimal" required value={f.buyerMax} onChange={digits("buyerMax")} />
           </div>
         </div>
         <div>

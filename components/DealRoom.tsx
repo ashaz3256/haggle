@@ -351,8 +351,8 @@ function MaxEditor({ buyerMax, open, onToggle, onSave, pending }: { buyerMax: nu
           </div>
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
-              <input className="input pl-7 !py-2" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value.replace(/[^\d.]/g, ""))} />
+              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
+              <input className="input !pl-8 !py-2" inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value.replace(/[^\d.]/g, ""))} />
             </div>
             <button type="button" disabled={!(n > 0) || n === buyerMax} onClick={() => onSave(n)} className="btn-blue !py-2">Update</button>
           </div>
@@ -395,8 +395,8 @@ function DraftCard({ draft, buyerMax, buyerName, onSubmit }: {
       {!ending && (
         <div className="flex items-center gap-3">
           <div className="relative w-32">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
-            <input className="input pl-7 !py-2 !bg-white font-bold" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} />
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">£</span>
+            <input className="input !pl-8 !py-2 !bg-white font-bold" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))} />
           </div>
           <span className={`text-xs ${p > buyerMax ? "text-red font-semibold" : "text-muted"}`}>
             {p > buyerMax ? `Over your max of ${money(buyerMax)} — raise it first` : `${draft.days}d · max ${money(buyerMax)}`}
