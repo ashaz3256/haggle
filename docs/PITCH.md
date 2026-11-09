@@ -21,6 +21,7 @@ Haggle lets your agent negotiate with the seller's agent inside limits you set. 
 - **Agent vs agent.** Both sides are automated, each with private information. That is real negotiation, not a chatbot answering questions.
 - **Server-side guard.** `guard()` in `lib/negotiate.ts` is the trust boundary. A move over the buyer's max or under the seller's floor is rejected, logged and retried once. A second violation forces a walk. The prompt asks the model to behave. The code makes sure it does.
 - **Agents that know when to stop.** Most agent-vs-agent demos loop until someone caves. Haggle's agents can walk away with a written reason, or escalate to their human when the other side's best offer is within 15% of the brief. The server also detects a stalled price gap and ends it. Every negotiation finishes in one of three labelled outcomes: deal, needs a human, or no deal. The agent is never allowed to stretch its principal's limit; only the human can.
+- **Humans can step in at any time.** Pause between moves. Raise or lower your max mid-negotiation; it's logged privately and the guard enforces it from the next turn. Or switch to **co-pilot**: the agent drafts each move and you edit, send or redo it. Your edits pass the same guard as the model's. Autonomy is a dial, not a switch. These came straight from user testing.
 - **Human approval on both sides.** Agents reach a deal. Humans own it. `/api/paypal/create-order` refuses unless the deal is `agreed` and both `buyerApproved` and `sellerApproved` are true.
 - **PayPal checkout.** Orders API v2 gives a real, familiar payment step. The agents never touch money.
 
@@ -36,8 +37,10 @@ Haggle lets your agent negotiate with the seller's agent inside limits you set. 
 
 Real:
 
-- Two LLM agents negotiating live. A full run takes about 10 to 20 seconds.
+- Two LLM agents negotiating live. A full run takes about 20 to 40 seconds (moves are spaced at least 1.8 s apart so people can read them).
 - Server-side guard, retry and forced walk.
+- Co-pilot mode, pause/resume, and live limit changes, verified 2026-11-09 via the API locally and on Railway, UI checked on a phone.
+- Listing photos (resized in the browser, stored in SQLite).
 - Three endings, each verified on the public instance: agreed (£260 brief), escalated to a human with the agent's note (£224 brief), walked by the stall detector with a reason (£160 brief). The human override path (stretch my limit) is verified too.
 - Persistence of every turn. A reload or dropped connection mid-run is handled: the server finishes the run and the page re-attaches or resumes from saved turns. A Resume button appears if the connection drops.
 - Dual approval gate on the server.
@@ -65,8 +68,8 @@ Stage one is pass/fail: fits the theme and "reasonably applies" PayPal APIs. Sta
 | Criterion (official wording, shortened) | Where Haggle proves it | Demo moment (`DEMO.md`) |
 |---|---|---|
 | **Technological Implementation**: thorough, skilful use of the PayPal platform and AI tools; genuine, working, non-trivial | PayPal Orders v2 create + capture behind a server-side dual-approval gate. Two LLM agents with private information, forced structured tool calls, zod validation, `guard()` as the trust boundary, stall detection, escalation, SSE streaming with resume. AG Grid dashboard. | 0:40 live stream; 1:05 guard; 2:10 PayPal order |
-| **Design**: a complete, coherent product, not a proof of concept | Listings, brief form, live deal room, three labelled endings with reasons, human decision card, approvals, PayPal checkout, dashboard, tutorial page. Nothing is a mockup. | 0:25 brief; 1:25 outcome card; /how-it-works |
-| **Potential Impact**: a credible, specific case for a real problem and audience; the demo actually addresses it | Problem: people will not let an agent spend money unsupervised, and agent-to-agent haggling loops forever. Audience: secondhand, freelance and quote-based services. Shown: private limits, guard, walk/escalate, human approval before money. | Open with the problem; "needs you" ending |
+| **Design**: a complete, coherent product, not a proof of concept | Listings with photos, brief form with Full auto / Co-pilot, live deal room with pause and live limits, three labelled endings with reasons, human decision card, approvals, PayPal checkout, dashboard, tutorial page. Nothing is a mockup. | 0:25 brief; 1:25 outcome card; /how-it-works |
+| **Potential Impact**: a credible, specific case for a real problem and audience; the demo actually addresses it | Problem: people will not let an agent spend money unsupervised, and agent-to-agent haggling loops forever. Audience: secondhand, freelance and quote-based services. Shown: private limits, guard, walk/escalate, co-pilot and live limits, human approval before money. Iterated on real tester feedback. | Open with the problem; "needs you" ending |
 | **Innovation / Idea**: creative, novel, different from existing concepts | Agent vs agent with asymmetric private information, and agents that know when to stop: walk with a reason, escalate within 15%, server ends stalls. Best Offer on eBay is a form; this is a negotiation with a safety boundary. | 1:05 to 1:45 |
 | **Presentation**: video shows it working end to end; pitch says what, for whom, why; easy to follow | Under 3 minutes. Three endings in one video. State problem, audience, and "agents negotiate, guards enforce, humans approve, PayPal settles". | Whole script |
 
@@ -87,6 +90,12 @@ Honorable-mention prizes we should name in the submission text:
 - [ ] **Demo video**: under 3 minutes, on YouTube, public, link on the form. Follow `DEMO.md`. No copyrighted music. Show all three endings and the PayPal popup.
 - [ ] **New or significantly updated**: the repo history shows everything was built during the submission period (first commit after 1 Oct 2026). Say so in the description.
 - [ ] **Rehearse the PayPal popup payment** with a sandbox personal account before recording.
+
+## Future work (from tester feedback, not built)
+
+- Tell your agent something mid-run ("ask if they have anything under £150").
+- AI photo check for damage, so a buyer has evidence if the item arrives broken.
+- Co-pilot for the seller side, and multiple photos per listing.
 
 ## Demo moments (for judges)
 

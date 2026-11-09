@@ -2,7 +2,7 @@
 
 Setup before you start (not on the clock):
 
-- Public instance: https://haggle-production-b343.up.railway.app (Railway, SQLite on a `/data` volume, deployed 2026-11-04 with `railway up` from `haggle/haggle/`). Use this for the demo; localhost is the fallback.
+- Public instance: https://haggle-production-b343.up.railway.app (Railway, SQLite on a `/data` volume, last deployed 2026-11-09 with `railway up` from `haggle/haggle/`). Use this for the demo; localhost is the fallback.
 - The public instance is open (no access code). Each IP may start at most 12 negotiations per hour (`NEG_RATE_LIMIT`). An optional gate exists: set `ACCESS_CODE` on the Railway service to require it; share links as `?code=<ACCESS_CODE>`.
 - Fallback dev server at http://localhost:3000 (`npm run dev` from `haggle/haggle/`).
 - Tab 1: the public URL (start here).
@@ -18,8 +18,9 @@ Typical result: agreed around the mid-£200s in about 3 rounds. Last verified ru
 |---|---|---|
 | 0:00 | Home page (3 listings) | "Haggle: your agent haggles, their agent haggles back, you both approve, PayPal settles." |
 | 0:15 | Click **Send your agent** on "Used road bike, Giant Contend, 2021" (asking £320) | "Tom is selling a bike for £320. I'm Sam, and I'll brief my agent." |
-| 0:25 | Brief form: Name `Sam`, Max budget `260`, Within `7` days, Must-haves `helmet included`. Click **Send my agent in** | "My max is £260. The seller's agent never sees that number. It also never tells mine its floor." |
+| 0:25 | Brief form: Name `Sam`, Max budget `260`, Within `7` days, Must-haves `helmet included`, Mode **Full auto**. Click **Send my agent in** | "My max is £260. The seller's agent never sees that number. It also never tells mine its floor." |
 | 0:40 | Deal room opens at `/deal/<id>`. Watch the bubbles stream in | "Two LLM agents, live over SSE. Each only knows its own limits and the public listing." |
+| 0:55 | Click **❚❚ Pause** in the header, then **▶ Resume** | "I can stop my agent at any point between moves. Nothing happens without me being able to step in." |
 | 1:05 | Point at the "Guard blocks" counter in the right-hand brief card (and any red Guard row if one appears) | "Every move is checked on the server against hard limits. If a model offers over budget or under floor, the move is blocked and logged. Two strikes forces a walk." |
 | 1:25 | Status flips to **agreed**; point at "Deal reached" card (price, days, deliverables) | "Deal in about 3 rounds, under my max. But no money has moved yet." |
 | 1:45 | Click **Approve as Sam (buyer)**, then **Approve as Tom (seller)** | "Both humans sign off. The server refuses to create a PayPal order until both have." |
@@ -30,7 +31,8 @@ Typical result: agreed around the mid-£200s in about 3 rounds. Last verified ru
 
 Timing notes:
 
-- A full negotiation takes about 10 to 20 seconds. Fill the gap by explaining the guard (step 1:05).
+- Moves arrive at least 1.8 s apart (`TURN_MIN_MS`) so people can read them. A full negotiation takes about 20 to 40 seconds. Fill the gap by explaining the guard (step 1:05).
+- If you scroll up during a run the page stays put and a **New messages ↓** button appears; tap it to jump back down.
 - If the buyer agent is slow, say the line for 1:25 while bubbles still appear.
 
 ## Three outcomes (the "agents that know when to stop" story)
@@ -51,9 +53,23 @@ Rules that make this deterministic, not vibes:
 - Verified 2026-11-04 with Nebius Qwen3-235B: £260 agreed in 3 rounds; £224 escalated by the seller's agent in round 6; £160 walked by the stall detector in round 5 (24 s).
 - Which agent escalates (buyer or seller) varies per run (seen both). The card adapts.
 
+## Humans in control: co-pilot and live limits (built from tester feedback, 2026-11-09)
+
+Testers said the agents moved too fast to react, they wanted to change their limit mid-chat, and they wanted to approve moves themselves. All three are in. Good for a 30-second segment after the three outcomes, or instead of one of them.
+
+| Feature | How to show it | What to say |
+|---|---|---|
+| Co-pilot mode | Brief form: pick **Co-pilot**, max `250`. The deal room shows a dashed **draft for you** card with the agent's message, price and its private note. Edit the text, then click **Send counter-offer**. Try typing `300` first: the card turns red, "Over your max, raise it first", and the server rejects it. | "In co-pilot my agent drafts, I decide. My edits go through the same guard as the model, so I can't fat-finger past my own limit either." |
+| Change your max live | Header: **Your max · Change** → **+£25** → **Update**. A grey System line appears in the chat: "Sam changed their max budget from £250 to £275. Private: the seller's agent can't see this." | "Tom's agent never sees this. My agent uses the new limit from its next turn, and the guard enforces it." |
+| Pause | **❚❚ Pause** in the header; status pill shows **paused**; **▶ Resume** carries on from the saved turns. | "Agents are fast. Humans get a pause button." |
+| Lowball | Brief with max `1` on the bike. Tom's agent replies that £1 is "not a serious offer" and holds near asking. | "It doesn't reward a silly offer with a big concession." |
+| Photos | **Post a listing** → tap **Add a photo** (camera on a phone). Resized in the browser, shown on the listing card. | Only if asked. |
+
+Verified 2026-11-09 via the API on localhost and on the Railway instance: pause mid-run then resume; raising the max from £200 to £280 mid-run (agreed at £265); co-pilot draft, guard rejection of an over-max edit, edited send, seller reply, next draft, redo; £1 lowball; photo upload and display. The user checked the new UI on a phone.
+
 ## What is verified and what is not
 
-- Verified end to end today: listings, creating a negotiation, live streaming in the browser, agreed state, buyer and seller approval, PayPal create-order returning a real sandbox order id.
+- Verified end to end: listings, creating a negotiation, live streaming in the browser, agreed state, buyer and seller approval, PayPal create-order returning a real sandbox order id.
 - Verified 2026-11-04 via the API and in Chrome: all three outcomes above (agreed, needs_human, walked), the amber "needs a decision" card, and clicking **Stretch my limit** (deal flips to agreed with an amber "over your max, you approved the stretch" line). Screenshots: `docs/screenshots/deal-needs-human.jpg`, `deal-stretched-agreed.jpg`.
 - **Not verified: the actual payment capture in the PayPal popup.** It needs a sandbox personal account to log in and pay. Do not promise it works on stage unless you rehearsed it with that account.
 - The guard blocking a move depends on the model misbehaving. It may show 0 blocks on a given run. Do not promise a red Guard row.
