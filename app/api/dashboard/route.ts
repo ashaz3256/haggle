@@ -3,7 +3,10 @@ import { db } from "@/lib/db";
 
 export async function GET() {
   const rows = await db.negotiation.findMany({
-    include: { listing: { select: { title: true, askingPrice: true } } },
+    include: {
+      listing: { select: { title: true, askingPrice: true } },
+      turns: { select: { idx: true, role: true, action: true, price: true, days: true, message: true, reason: true }, orderBy: { idx: "asc" } },
+    },
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json(
@@ -26,6 +29,9 @@ export async function GET() {
       status: n.status,
       paypalOrderId: n.paypalOrderId,
       createdAt: n.createdAt,
+      mode: n.mode,
+      endReason: n.endReason,
+      turns: n.turns,
       };
     })
   );

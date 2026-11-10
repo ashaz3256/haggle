@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import BriefForm from "@/components/BriefForm";
 import ListingPhoto from "@/components/ListingPhoto";
 import SellerPanel from "@/components/SellerPanel";
+import MarketCheck from "@/components/MarketCheck";
+import { getMarket } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,7 @@ export default async function ListingPage({ params, searchParams }: {
   const token = (await cookies()).get(`haggle_own_${l.id}`)?.value;
   const isOwner = l.ownerToken != null && token === l.ownerToken;
   const showSeller = isOwner && as !== "buyer";
+  const market = await getMarket(l);
 
   return (
     <div className="grid gap-6 md:grid-cols-5">
@@ -34,6 +37,7 @@ export default async function ListingPage({ params, searchParams }: {
             <span className="text-sm text-muted">Asking price</span>
             <span className="text-3xl font-extrabold text-navy">£{l.askingPrice}</span>
           </div>
+          {market && <MarketCheck market={market} askingPrice={l.askingPrice} />}
         </div>
       </div>
       <div className="md:col-span-2">

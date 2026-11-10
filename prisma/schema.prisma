@@ -24,6 +24,8 @@ model Listing {
   imageData     String?
   // secret held in the posting browser's cookie; marks who owns the listing (no accounts)
   ownerToken    String?
+  // cached Channel3 market comparables (JSON Market from lib/market.ts); items only
+  marketData    String?
   createdAt     DateTime @default(now())
   negotiations  Negotiation[]
 }

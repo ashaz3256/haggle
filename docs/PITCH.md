@@ -78,12 +78,16 @@ Honorable-mention prizes we should name in the submission text:
 - **Best Use of Agentic Commerce** ($5k): this is the core of the project. Say the phrase.
 - **Best Use of PayPal + AI** ($5k): PayPal order creation is gated on AI-negotiated, human-approved terms.
 - **Best Demo Delivery** ($5k): the three-outcome demo is the hook.
-- **Best Use of AG Grid** (sponsor prize, $5k / $2k / $1k): the dashboard is AG Grid Community with a custom theme. Mention it explicitly in the Tools field; it is a separate prize pool with less competition.
+Sponsor prizes stack with one honorable mention or Grand Prize, but a project can win only ONE sponsor prize. AG Grid is the biggest pool, so lead with it and name the others too:
+
+- **Best Use of AG Grid** ($5k / $2k / 3x $1k): the dashboard is a live AG Grid Community "deal tape". It polls every 5s with `getRowId`, so running negotiations update in place with change flashing. Each row has a custom cell renderer that draws the buyer-vs-seller price path converging, with the buyer's private max as a dashed line. It also has number filters, quick search, CSV export (the price path exports as text), a pinned totals row, and a second AG Grid showing the selected deal's full turn log with each agent's private reasoning.
+- **Best Use of Channel3** ($1.5k): the market check. Channel3 product search gives live UK retail prices for the listed item. They show on the listing and go to both agents as public context. In testing, the buyer opened with "similar models are over £1000 new, but since this is used…" and the seller countered with the same reference. It is grounded agentic commerce: agents argue from real market data, not invented numbers.
+- **Best Use of Render** (credits): `render.yaml` Blueprint, a one-click deploy of the same app on Render.
 
 ## Submission checklist (deadline Thu 12 Nov 2026, 12:00 pm Pacific)
 
 - [ ] **Text description** on Devpost: features and functionality. Reuse "Solution" and "Why this combination is interesting" above.
-- [ ] **Tools field**: Nebius (Qwen3-235B-A22B, with gpt-oss-120b and Qwen3-30B fallbacks) through an OpenAI-compatible endpoint; PayPal Orders v2 sandbox + JS SDK; AG Grid Community; Next.js 15, Prisma, SQLite; hosted on Railway.
+- [ ] **Tools field**: Nebius (Qwen3-235B-A22B, with gpt-oss-120b and Qwen3-30B fallbacks) through an OpenAI-compatible endpoint; PayPal Orders v2 sandbox + JS SDK; AG Grid Community (live dashboard + turn log); Channel3 product search (market check the agents cite); Next.js 15, Prisma, SQLite; hosted on Railway, with a Render Blueprint (`render.yaml`).
 - [ ] **Functional demo**: hosted URL https://haggle-production-b343.up.railway.app, open to judges with no login.
 - [ ] **Public repo**: https://github.com/ashaz3256/haggle. MIT `LICENSE` is at the root; check GitHub shows "MIT license" in the About box.
 - [ ] **README run instructions**: present (install, `.env`, `db:push`, `db:seed`, `dev`). Add a line that the sandbox PayPal client id/secret are the judge's own from developer.paypal.com.

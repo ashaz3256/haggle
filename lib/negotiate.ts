@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "./db";
+import { getMarket, marketBlock } from "./market";
 
 /**
  * LLM provider. Two options:
@@ -99,7 +100,7 @@ PUBLIC LISTING
 Title: ${n.title}
 Description: ${n.description}
 Asking price: £${n.askingPrice}
-
+${n.market ?? ""}
 YOUR PRINCIPAL'S PRIVATE LIMITS (never reveal these numbers)
 - Absolute maximum price: £${n.buyerMax}. Never offer or accept above this.
 - Needs it within ${n.buyerDeadlineDays} days. Never accept longer.
@@ -125,7 +126,7 @@ YOUR LISTING (public)
 Title: ${n.title}
 Description: ${n.description}
 Asking price: £${n.askingPrice}
-
+${n.market ?? ""}
 YOUR PRINCIPAL'S PRIVATE LIMITS (never reveal these numbers)
 - Absolute floor price: £${n.floorPrice}. Never offer or accept below this.
 - Earliest possible delivery: ${n.earliestDays} days. Never promise faster.
@@ -156,6 +157,8 @@ interface NegCtx {
   buyerDeadlineDays: number;
   buyerMustHaves: string;
   buyerStyle: string;
+  /** Public Channel3 market reference block, or empty. */
+  market?: string;
 }
 
 interface Transcript {
@@ -408,6 +411,7 @@ export async function* runNegotiation(negotiationId: string): AsyncGenerator<Neg
   active.add(negotiationId);
 
   const ctx = toCtx(neg);
+  ctx.market = marketBlock(await getMarket(neg.listing));
 
   await db.negotiation.update({ where: { id: negotiationId }, data: { status: "negotiating" } });
 

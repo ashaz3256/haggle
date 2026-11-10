@@ -18,7 +18,8 @@ A buyer describes what they want and sets a private max budget and deadline. A s
 - LLM agents with forced tool-use for structured negotiation moves — Anthropic SDK or any OpenAI-compatible endpoint (Gemini, OpenAI, Groq, Ollama…)
 - PayPal Orders API v2 + PayPal JS SDK buttons (`@paypal/react-paypal-js`)
 - Prisma 6 + SQLite (engine-less driver adapter, `better-sqlite3`)
-- AG Grid for the deals dashboard
+- AG Grid Community for the deals dashboard: live-updating grid with an inline price-path chart per deal, change flashing, quick search, CSV export, pinned totals row, and a second grid with the selected deal's turn log
+- Channel3 product search for a market check: live UK retail prices for physical items, shown on the listing and given to both agents as public context they cite while negotiating
 - SSE streaming so you watch the agents negotiate live
 
 ## Demo
@@ -55,6 +56,7 @@ Agents can run on **any OpenAI-compatible endpoint** (Gemini free tier, OpenAI, 
 | `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | developer.paypal.com → Apps & Credentials → **Sandbox** → Create app |
 | `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | same client ID (used by the PayPal buttons) |
 | `PAYPAL_API_BASE` | leave as `https://api-m.sandbox.paypal.com` |
+| `CHANNEL3_API_KEY` | optional, trychannel3.com developer sign-up. Enables the market check on `item` listings; without it agents negotiate without market prices |
 
 To test checkout you also need a **sandbox personal account** (developer.paypal.com → Sandbox → Accounts). Log in with that at the PayPal popup.
 
@@ -77,6 +79,8 @@ lib/negotiate.ts
   guard()        → rejects moves outside limits; "accept" is snapped to the opponent's last offer, then validated
   runNegotiation() → alternates buyer/seller for ≤ MAX_ROUNDS, persists every turn, yields SSE events
 ```
+
+Market check (`lib/market.ts`): for `item` listings, the first time the listing is viewed or negotiated, Channel3 `POST /v1/search` (country GB, GBP, new and used) returns comparable products. Results are filtered to the asking price up to 5x, so new-retail references stay and accessories drop out. The top four are cached on the listing (`Listing.marketData`). Both agents get them as a public `MARKET REFERENCE` block and cite them ("similar models are over £1000 new, but since this is used…"). Services and freelance work have no retail comparables, so they skip it. A failed lookup never blocks a negotiation.
 
 Payment gate (`app/api/paypal/create-order`): refuses to create a PayPal order unless `status === "agreed" && buyerApproved && sellerApproved`.
 
@@ -102,7 +106,11 @@ The app runs as one long-lived Node process with SQLite on a volume, so any host
 2. `railway volume add -m /data` and set `DATABASE_URL=file:/data/haggle.db` plus the env vars above. Optionally `ACCESS_CODE` to gate the instance and `NEG_RATE_LIMIT` (default 12 per IP per hour).
 3. `railway up` from this folder. `npm start` runs `prisma db push`, the idempotent seed, then `next start`.
 
-Render or Fly work the same way with a persistent disk. Vercel needs a hosted SQLite (Turso) instead of the file adapter in `lib/db.ts`.
+## Deploy (Render)
+
+`render.yaml` is a Render Blueprint: in the Render dashboard choose **New → Blueprint**, pick this repo, and fill in the secret values it asks for. On the free plan SQLite is on the instance's local disk, so deals reset when it restarts or spins down; the demo listings are re-seeded on every boot. For persistence, add a disk at `/data` and set `DATABASE_URL=file:/data/haggle.db`.
+
+Fly works the same way with a persistent volume. Vercel needs a hosted SQLite (Turso) instead of the file adapter in `lib/db.ts`.
 
 ## License
 
