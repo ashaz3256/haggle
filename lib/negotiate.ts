@@ -221,7 +221,24 @@ function limitOverrun(role: Role, move: Move, ctx: NegCtx): number {
   return Math.max(price, days);
 }
 
+/** Shown when the public demo hits its daily AI budget, so a judge sees a clear reason instead of a broken page. */
+export const DEMO_BUSY_MSG =
+  "The public demo has reached its daily AI limit, which keeps it running for everyone. Please try again tomorrow, or watch the demo video.";
+
+/** Hard daily cap on LLM calls for this server process (resets at UTC midnight). Protects the provider balance on an open demo. */
+const LLM_DAILY_CAP = Number(process.env.LLM_DAILY_CAP ?? 1500);
+let llmDay = "";
+let llmCalls = 0;
+
+function takeLlmBudget() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== llmDay) { llmDay = today; llmCalls = 0; }
+  if (llmCalls >= LLM_DAILY_CAP) throw new Error(DEMO_BUSY_MSG);
+  llmCalls++;
+}
+
 async function askAgent(role: Role, ctx: NegCtx, transcript: Transcript[], retryNote?: string, stallNote?: string): Promise<Move> {
+  takeLlmBudget();
   const system = role === "buyer" ? buyerSystem(ctx) : sellerSystem(ctx);
 
   const history = transcript

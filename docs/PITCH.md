@@ -55,7 +55,7 @@ Mocked or simplified:
 
 Untested or unverified:
 
-- **Completing a payment in the PayPal popup (capture).** It needs a sandbox personal account to log in and pay. The capture route exists but has not been exercised end to end on this machine.
+- (Resolved 2026-11-11) PayPal popup payment and capture: verified end to end on Railway, status **paid**, sandbox order `28A89478YE489833B`.
 - There are no automated tests. The only check is `npx tsc --noEmit`.
 - The guard-block path depends on the model stepping out of bounds. It shows up often on low-budget briefs but is not guaranteed on a given run.
 - Deployed and verified on Railway: https://haggle-production-b343.up.railway.app (open; per-IP rate limit on starting negotiations).

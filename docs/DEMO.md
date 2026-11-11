@@ -1,5 +1,42 @@
 # Haggle: 3-minute demo script
 
+## Devpost video (screen recording + voiceover)
+
+Target length **2:45** (judges stop at 3:00). About 400 spoken words. Record on the public Railway URL, not localhost (no Next.js dev badge, and it is what judges will open).
+
+### Before you hit record
+
+1. Open these tabs in order (an incognito window hides extensions and bookmarks):
+   - **Tab A** home: https://haggle-production-b343.up.railway.app
+   - **Tab B** a finished **needs a human** deal: brief the bike with max `224` and let it finish (status *needs you*). Don't click anything on it yet.
+   - **Tab C** a finished **no deal**: bike, max `160`, let it finish.
+   - **Tab D** `/dashboard`.
+2. Have the PayPal sandbox personal account email and password ready (developer.paypal.com → Sandbox → Accounts). Pay once as a rehearsal before recording.
+3. Browser zoom 110-125% so text is readable on YouTube. Full-screen the window (F11).
+4. Recorder: **Win+Alt+R** (Xbox Game Bar) or OBS, 1080p. Edit in **Clipchamp** (built into Windows): trim the gaps, and speed up the live negotiation (2x) while your voice keeps talking.
+5. No music unless it is royalty-free (rules ban copyrighted material). No PayPal logos beyond what the app shows.
+6. Upload to YouTube as **Public** and paste the link into Devpost → Project details.
+
+### Script
+
+| Time | On screen | Say (your voice) |
+|---|---|---|
+| 0:00 | Tab A, home page | "Haggling is slow and awkward, and most of us leave money on the table. AI agents could do it for us, but would you let an AI spend your money unsupervised? This is Haggle: your agent haggles, their agent haggles back, you both approve, and PayPal settles." |
+| 0:18 | Click the **Used road bike** listing. Scroll to **Market check** | "Tom is selling his bike for £320. Before anyone negotiates, Haggle pulls live UK retail prices from Channel3. This bike costs about a thousand pounds new, and both agents get these prices, so they argue from real data, not made-up numbers." |
+| 0:38 | Fill the brief: `Sam`, max `260`, `7` days, `helmet included`, Full auto. Click **Send my agent in** | "I'm the buyer. I tell my agent my private limits: £260 max, within a week, helmet included. Tom set a private floor too. Neither agent ever sees the other side's numbers." |
+| 0:55 | Deal room streaming (speed up in editing). Point at the bubbles, then the **Guard blocks** counter | "Now two AI agents negotiate live, price, timing and what's included. Every move goes through a guard on the server. If an agent offers over my max or under Tom's floor, the move is blocked. The prompt asks the model to behave; the code makes sure it does. I can pause at any time, or switch to co-pilot and approve every move myself." |
+| 1:25 | Status **agreed**, the Deal reached card | "Deal reached, under my max. But no money has moved. An agent can't spend my money on its own say-so." |
+| 1:35 | Click **Approve as Sam**, then **Approve as Tom**. The PayPal button appears | "Both humans approve. Only then does the server create a PayPal order. It refuses otherwise." |
+| 1:45 | Click PayPal, log in with the sandbox account, pay. Status becomes **paid** | "I check out with PayPal in the sandbox. The order is captured, and the deal is paid." |
+| 2:00 | Tab B: the **needs a human** card with the agent's note | "Not every negotiation should end in a deal. Here my max was £224 and Tom's floor was £240. My agent isn't allowed to stretch my limit, so it stops and asks me, and tells me why." |
+| 2:13 | Tab C: the **No deal** card | "And when there's no overlap at all, the agents don't loop forever. The server spots the stall and walks away, with a reason." |
+| 2:23 | Tab D: dashboard. Point at the price-path lines, click a row, show the turn log | "Every negotiation lands in a live AG Grid dashboard: how buyer and seller offers converged, guard blocks, PayPal orders, and the full turn log with each agent's private reasoning." |
+| 2:38 | Back to Tab A | "Haggle is for secondhand sellers, freelancers and anyone who hates haggling. Agents negotiate, code enforces the limits, humans approve, PayPal settles." |
+
+If the payment popup fails on the day, cut the 1:45 line to: "The order is created in PayPal's sandbox, ready for the buyer to pay", and show the PayPal button only. Don't claim a payment you didn't make.
+
+## Live demo (on stage)
+
 Setup before you start (not on the clock):
 
 - Public instance: https://haggle-production-b343.up.railway.app (Railway, SQLite on a `/data` volume, last deployed 2026-11-09 with `railway up` from `haggle/haggle/`). Use this for the demo; localhost is the fallback.
@@ -12,7 +49,7 @@ Setup before you start (not on the clock):
 Example brief for the bike: name **Sam**, max **260**, **7** days, must-have **helmet included**, style Friendly.
 Typical result: agreed around the mid-£200s in about 3 rounds. Last verified run: agreed at **£250**, 2 days, bike + helmet, 0 guard blocks. The price varies per run.
 
-## Script
+### Script
 
 | Time | Where / click | Say |
 |---|---|---|
@@ -26,7 +63,7 @@ Typical result: agreed around the mid-£200s in about 3 rounds. Last verified ru
 | 1:45 | Click **Approve as Sam (buyer)**, then **Approve as Tom (seller)** | "Both humans sign off. The server refuses to create a PayPal order until both have." |
 | 2:10 | PayPal buttons unlock in the same card. Click the PayPal button | "PayPal Orders v2. The order is created server-side only after dual approval." |
 | 2:25 | PayPal sandbox popup: log in with the sandbox personal account and pay (or stop at the popup, see fallback) | "Sandbox money, real PayPal flow. On approval the server captures the order." |
-| 2:40 | Open /dashboard | "Every negotiation: asking vs budget vs agreed, rounds, guard blocks, PayPal order." |
+| 2:40 | Open /dashboard | "A live AG Grid of every negotiation: the price path of each deal, rounds, guard blocks, PayPal order. Click one for the full turn log." |
 | 2:55 | Back to home | "Agents negotiate. Guards enforce. Humans approve. PayPal settles." |
 
 Timing notes:
@@ -71,7 +108,7 @@ Verified 2026-11-09 via the API on localhost and on the Railway instance: pause 
 
 - Verified end to end: listings, creating a negotiation, live streaming in the browser, agreed state, buyer and seller approval, PayPal create-order returning a real sandbox order id.
 - Verified 2026-11-04 via the API and in Chrome: all three outcomes above (agreed, needs_human, walked), the amber "needs a decision" card, and clicking **Stretch my limit** (deal flips to agreed with an amber "over your max, you approved the stretch" line). Screenshots: `docs/screenshots/deal-needs-human.jpg`, `deal-stretched-agreed.jpg`.
-- **Not verified: the actual payment capture in the PayPal popup.** It needs a sandbox personal account to log in and pay. Do not promise it works on stage unless you rehearsed it with that account.
+- **Verified 2026-11-11: payment capture in the PayPal popup** on Railway (status **paid**, order `28A89478YE489833B`). Log in to the popup with a sandbox **personal** account; the business account gives "This PayPal account is associated with the merchant".
 - The guard blocking a move depends on the model misbehaving. It may show 0 blocks on a given run. Do not promise a red Guard row.
 
 ## Fallbacks
@@ -99,8 +136,8 @@ Verified 2026-11-09 via the API on localhost and on the Railway instance: pause 
 ### PayPal popup fails or sandbox is down
 
 1. Show the create-order response instead: open DevTools, Network tab, find `POST /api/paypal/create-order`, show the JSON with the sandbox order `id` and status `CREATED`.
-2. Say: "The order exists in PayPal sandbox. Capture happens when the buyer approves in the popup. I have not completed that step on this machine."
-3. Show screenshots from `docs/screenshots/` (approval flow). There is no screenshot of a completed payment.
+2. Say: "The order exists in PayPal sandbox. Capture happens when the buyer approves in the popup."
+3. Show screenshots from `docs/screenshots/` (approval flow), or the paid deal from the dashboard (order `28A89478YE489833B`).
 4. If create-order itself returns an error: check `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` in `.env` (sandbox app) and restart.
 
 ### Dev-only noise

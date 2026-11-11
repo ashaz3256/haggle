@@ -30,7 +30,7 @@ A buyer describes what they want and sets a private max budget and deadline. A s
 |---|---|
 | ![Brief form](docs/screenshots/listing-brief.png) | ![Deal agreed, buyer approved](docs/screenshots/deal-buyer-approved.png) |
 
-PayPal payment capture in the sandbox popup has not been verified end to end. Create-order has.
+The full PayPal flow is verified end to end on the live instance (2026-11-11): dual approval, create-order, buyer pays in the sandbox popup with a personal sandbox account, capture, status **paid** (sandbox order `28A89478YE489833B`). Pay with a sandbox **personal** account; the business account that owns the app can't pay itself.
 
 ## Run it
 
