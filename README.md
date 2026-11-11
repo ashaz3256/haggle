@@ -106,11 +106,7 @@ The app runs as one long-lived Node process with SQLite on a volume, so any host
 2. `railway volume add -m /data` and set `DATABASE_URL=file:/data/haggle.db` plus the env vars above. Optionally `ACCESS_CODE` to gate the instance and `NEG_RATE_LIMIT` (default 12 per IP per hour).
 3. `railway up` from this folder. `npm start` runs `prisma db push`, the idempotent seed, then `next start`.
 
-## Deploy (Render)
-
-`render.yaml` is a Render Blueprint: in the Render dashboard choose **New → Blueprint**, pick this repo, and fill in the secret values it asks for. On the free plan SQLite is on the instance's local disk, so deals reset when it restarts or spins down; the demo listings are re-seeded on every boot. For persistence, add a disk at `/data` and set `DATABASE_URL=file:/data/haggle.db`.
-
-Fly works the same way with a persistent volume. Vercel needs a hosted SQLite (Turso) instead of the file adapter in `lib/db.ts`.
+Render or Fly work the same way with a persistent volume. Vercel needs a hosted SQLite (Turso) instead of the file adapter in `lib/db.ts`.
 
 ## License
 
